@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starlit Timeline Editor Web</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- メニューバー -->
+        <div class="menu-bar">
+            <div class="menu-item">
+                <span>ファイル</span>
+                <div class="submenu">
+                    <div class="submenu-item" onclick="app.newProject()">新規プロジェクト</div>
+                    <div class="submenu-item" onclick="app.openProject()">プロジェクトを開く</div>
+                    <div class="submenu-item" onclick="app.saveProject()">プロジェクトを保存</div>
+                    <div class="submenu-divider"></div>
+                    <div class="submenu-item" onclick="app.importMedia()">素材をインポート</div>
+                </div>
+            </div>
+            <div class="menu-item">
+                <span>編集</span>
+                <div class="submenu">
+                    <div class="submenu-item" onclick="app.undo()">元に戻す (Ctrl+Z)</div>
+                    <div class="submenu-item" onclick="app.redo()">やり直し (Ctrl+Y)</div>
+                    <div class="submenu-divider"></div>
+                    <div class="submenu-item" onclick="app.deleteSelected()">削除 (Delete)</div>
+                </div>
+            </div>
+            <div class="menu-item">
+                <span>シーン</span>
+                <div class="submenu">
+                    <div class="submenu-item" onclick="app.sceneManager.createScene()">➕ 新規シーン作成</div>
+                    <div class="submenu-item" onclick="app.sceneManager.goToParentScene()">⬆️ 上の階層に戻る</div>
+                    <div class="submenu-divider"></div>
+                    <div class="submenu-item" onclick="app.createSceneFromSelection()">📦 選択クリップからシーン作成</div>
+                </div>
+            </div>
+            <div class="menu-item">
+                <span>オブジェクト</span>
+                <div class="submenu">
+                    <div class="submenu-item" onclick="app.createSolidColorClip()">🎨 ベタ塗りクリップ</div>
+                    <div class="submenu-item" onclick="app.createGradientClip()">🌈 グラデーションクリップ</div>
+                    <div class="submenu-item" onclick="app.createStripeClip()">📏 ストライプクリップ</div>
+                </div>
+            </div>
+            <div class="menu-item">
+                <span>書き出し</span>
+                <div class="submenu">
+                    <div class="submenu-item" onclick="app.exportWebM()">動画書き出し (WebM・透過対応)</div>
+                    <div class="submenu-item" onclick="app.exportSequence()">連番PNG書き出し</div>
+                    <div class="submenu-item" onclick="app.exportAudio()">音声のみ書き出し</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ツールバー -->
+        <div class="toolbar">
+            <div class="toolbar-separator"></div>
+        </div>
+
+        <div class="main-container">
+            <!-- 左サイドバー: シーン管理 & 素材エクスプローラー -->
+            <div class="sidebar left-sidebar">
+                <!-- シーン管理パネル -->
+                <div class="scene-panel" id="scenePanel" style="display: flex; flex-direction: column; height: 40%; border-bottom: 2px solid var(--chocolate-dark);">
+                    <!-- シーン管理の内容はJSで動的に生成 -->
+                </div>
+                
+                <!-- 素材エクスプローラー -->
+                <div style="display: flex; flex-direction: column; height: 60%;">
+                    <div class="sidebar-header">
+                        <h3>📁 素材</h3>
+                        <div class="header-controls">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="sequenceCheckbox">
+                                <span>連番</span>
+                            </label>
+                            <button class="round-button small" onclick="app.importMedia()" title="素材を追加">➕</button>
+                        </div>
+                    </div>
+                    <div class="asset-filter">
+                    <button class="filter-button active" onclick="app.setAssetFilter('all')" data-filter="all">
+                        すべて
+                    </button>
+                    <button class="filter-button" onclick="app.setAssetFilter('image')" data-filter="image">
+                        画像
+                    </button>
+                    <button class="filter-button" onclick="app.setAssetFilter('video')" data-filter="video">
+                        動画
+                    </button>
+                    <button class="filter-button" onclick="app.setAssetFilter('audio')" data-filter="audio">
+                        音声
+                    </button>
+                    <button class="filter-button" onclick="app.setAssetFilter('sequence')" data-filter="sequence">
+                        連番
+                    </button>
+                </div>
+                <div class="asset-explorer" id="assetExplorer" style="flex: 1; overflow-y: auto;">
+                    <div class="empty-message">素材をドロップまたは➕ボタンで追加</div>
+                </div>
+            </div>
+            </div>
+
+            <!-- 中央エリア -->
+            <div class="center-area">
+                <!-- プレビューエリア -->
+                <div class="preview-area" id="previewArea">
+                    <div class="preview-container" id="previewContainer">
+                        <canvas id="previewCanvas" width="1920" height="1080"></canvas>
+                        <svg id="overlayCanvas" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet">
+                            <g id="boundingBoxGroup"></g>
+                        </svg>
+                    </div>
+                    <div class="preview-controls">
+                        <div class="time-display" id="timeDisplay">00:00:00.000</div>
+                        <div class="resolution-display">1920 x 1080</div>
+                    </div>
+                </div>
+
+                <!-- タイムラインエリア -->
+                <div class="timeline-area">
+                    <!-- タイムラインヘッダー -->
+                    <div class="timeline-header">
+                        <div class="timeline-title">
+                            <span>⏱️ タイムライン</span>
+                            <div class="scene-breadcrumb" id="sceneBreadcrumb" style="margin-left: 15px; display: inline-flex; align-items: center; gap: 5px; font-size: 13px;">
+                                <!-- パンくずリストがここに動的に生成される -->
+                            </div>
+                            <button class="small-button" onclick="app.sceneManager.goToParentScene()" title="上の階層に戻る" style="margin-left: 10px;">⬆️ 上へ</button>
+                        </div>
+                        <div class="export-range-controls">
+                            <div class="preview-zoom-control" style="margin-right: 15px;">
+                                <label>🔍 <span id="previewZoomValue">100%</span></label>
+                                <input type="range" min="25" max="200" value="100" step="5" id="previewZoomSlider" style="width: 120px;">
+                            </div>
+                            <label>📹 FPS:</label>
+                            <select id="fpsSelect" class="fps-select" onchange="app.changeFPS(this.value)">
+                                <option value="24">24 fps</option>
+                                <option value="25">25 fps</option>
+                                <option value="30" selected>30 fps</option>
+                                <option value="50">50 fps</option>
+                                <option value="60">60 fps</option>
+                                <option value="120">120 fps</option>
+                            </select>
+                            <div class="control-separator"></div>
+                            <label>書き出し範囲:</label>
+                            <input type="number" id="exportStart" value="0" min="0" step="0.1" class="time-input">
+                            <span>～</span>
+                            <input type="number" id="exportEnd" value="10" min="0" step="0.1" class="time-input">
+                            <span>秒</span>
+                            <button class="round-button small" onclick="app.setExportRangeToAll()">⤢ 全体</button>
+                            <button class="round-button small" onclick="app.setExportRangeToSelection()">⬚ 選択</button>
+                        </div>
+                    </div>
+
+                    <!-- タイムラインコントロール -->
+                    <div class="timeline-controls">
+                        <label>🔍 ズーム:</label>
+                        <input type="range" id="zoomSlider" min="10" max="200" value="50" class="styled-slider">
+                        <span id="zoomValue">50 px/秒</span>
+                        <div class="control-separator"></div>
+                        <label>📊 トラック:</label>
+                        <button class="round-button small" onclick="app.decreaseTrackCount()">➖</button>
+                        <span id="trackCount" class="track-count">5</span>
+                        <button class="round-button small" onclick="app.increaseTrackCount()">➕</button>
+                        <div class="control-separator"></div>
+                        <button class="icon-button" onclick="app.play()" id="playButton" title="再生">
+                            <img src="play.png" alt="再生" class="button-icon">
+                        </button>
+                        <button class="icon-button" onclick="app.stop()" title="停止">
+                            <img src="stop.png" alt="停止" class="button-icon">
+                        </button>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="loopPlaybackCheckbox">
+                            <span>ループ再生</span>
+                        </label>
+                        <button class="small-button" onclick="app.setInPoint()" title="インポイント設定 (I)">📍 In</button>
+                        <button class="small-button" onclick="app.setOutPoint()" title="アウトポイント設定 (O)">📍 Out</button>
+                        <button class="small-button" onclick="app.clearInOutPoints()" title="範囲クリア">❌</button>
+                        <div class="control-separator"></div>
+                        <button class="icon-button" onclick="app.undo()" title="元に戻す (Ctrl+Z)">
+                            <img src="undo.png" alt="元に戻す" class="button-icon">
+                        </button>
+                        <button class="icon-button" onclick="app.redo()" title="やり直し (Ctrl+Y)">
+                            <img src="redo.png" alt="やり直し" class="button-icon">
+                        </button>
+                    </div>
+
+                    <!-- タイムライン定規エリア -->
+                    <div class="timeline-ruler-area">
+                        <!-- 左側のスペーサー（トラックパネルと同じ幅） -->
+                        <div class="track-panel-spacer"></div>
+                        
+                        <!-- タイムライン定規 -->
+                        <div class="timeline-ruler">
+                            <canvas id="rulerCanvas" height="30"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- タイムラインとトラックパネルのコンテナ -->
+                    <div class="timeline-with-tracks">
+                        <!-- トラックパネル（左側） -->
+                        <div class="track-panel" id="trackPanel">
+                            <!-- トラック名がここに動的に生成される -->
+                        </div>
+                        
+                        <!-- タイムラインキャンバス（右側） -->
+                        <div class="timeline-scroll" id="timelineScroll">
+                            <canvas id="timelineCanvas" width="3000" height="500"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右サイドバー: プロパティ -->
+            <div class="sidebar right-sidebar">
+                <div class="properties-panel">
+                    <div class="sidebar-header">
+                        <h3>⚙️ プロパティ</h3>
+                        <button class="round-button" onclick="app.openClipEffectWindow()" title="エフェクト編集" style="background: var(--accent-orange); font-size: 16px;">✨</button>
+                    </div>
+                    <div id="propertiesContent" class="properties-content">
+                        <div class="empty-message">クリップを選択してください</div>
+                    </div>
+                </div>
+
+                <div class="effects-panel" style="display: none;">
+                    <div class="sidebar-header">
+                        <h3>✨ エフェクト</h3>
+                        <div class="header-controls">
+                            <button class="round-button small" onclick="app.openEffectEditor()" title="別ウィンドウで編集">➕</button>
+                        </div>
+                    </div>
+                    <div class="effects-content">
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>🎬 映画風レターボックス</span>
+                                <input type="checkbox" id="letterboxEnable" onchange="app.updatePreview()">
+                                <button class="round-button small" onclick="app.openEffectDetailWindow('letterbox')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>🌈 グラデーション</span>
+                                <input type="checkbox" id="gradientEnable" onchange="app.updatePreview()">
+                                <button class="round-button small" onclick="app.openEffectDetailWindow('gradient')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>✨ ディフュージョン撮影</span>
+                                <input type="checkbox" id="diffusionEnable" onchange="app.updatePreview()">
+                                <button class="round-button small" onclick="app.openEffectDetailWindow('diffusion')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>🎨 カラーキー</span>
+                                <input type="checkbox" id="colorKeyEnable" onchange="app.updatePreview()">
+                                <button class="round-button small" onclick="app.openEffectDetailWindow('colorKey')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>✨ ノーマライズ(スムージング)</span>
+                                <input type="checkbox" id="normalizeEnable" onchange="app.updatePreview()">
+                                <button class="round-button small" onclick="app.openEffectDetailWindow('normalize')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 以下は非表示で別ウィンドウ用に保持 -->
+                    <div class="effects-content-hidden" style="display: none;">
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleEffect('letterbox')">
+                                <span>🎬 映画風レターボックス</span>
+                                <input type="checkbox" id="letterboxEnable" onchange="app.updatePreview()">
+                            </div>
+                            <div class="effect-controls" id="letterboxControls">
+                                <label>太さ:</label>
+                                <input type="range" min="0" max="200" value="100" class="effect-slider" id="letterboxHeight" oninput="app.updatePreview()">
+                                <span id="letterboxHeightValue">100px</span>
+                                
+                                <label>色:</label>
+                                <input type="color" value="#000000" id="letterboxColor" onchange="app.updatePreview()">
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleEffect('gradient')">
+                                <span>🌈 グラデーション</span>
+                                <input type="checkbox" id="gradientEnable" onchange="app.updatePreview()">
+                            </div>
+                            <div class="effect-controls" id="gradientControls">
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🔼 上部グラデーション</div>
+                                    
+                                    <label>色:</label>
+                                    <input type="color" value="#FFFF00" id="gradientTopColor" onchange="app.updateGradientEffect()">
+                                    
+                                    <label>高さ: <span id="gradientTopHeightValue">300px</span></label>
+                                    <input type="range" min="0" max="1080" value="300" class="effect-slider" id="gradientTopHeight" oninput="app.updateGradientEffect()">
+                                    
+                                    <label>不透明度: <span id="gradientTopOpacityValue">50%</span></label>
+                                    <input type="range" min="0" max="100" value="50" class="effect-slider" id="gradientTopOpacity" oninput="app.updateGradientEffect()">
+                                    
+                                    <label>ブレンドモード:</label>
+                                    <select id="gradientTopBlendMode" class="blend-mode-select" onchange="app.updateGradientEffect()">
+                                        <option value="normal">通常</option>
+                                        <option value="overlay">オーバーレイ</option>
+                                        <option value="screen">スクリーン</option>
+                                        <option value="multiply">乗算</option>
+                                        <option value="darken">比較(暗)</option>
+                                        <option value="lighten">比較(明)</option>
+                                        <option value="color-dodge">覆い焼き</option>
+                                        <option value="color-burn">焼き込み</option>
+                                        <option value="hard-light">ハードライト</option>
+                                        <option value="soft-light">ソフトライト</option>
+                                        <option value="difference">差の絶対値</option>
+                                        <option value="exclusion">除外</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🔽 下部グラデーション</div>
+                                    
+                                    <label>色:</label>
+                                    <input type="color" value="#0000FF" id="gradientBottomColor" onchange="app.updateGradientEffect()">
+                                    
+                                    <label>高さ: <span id="gradientBottomHeightValue">300px</span></label>
+                                    <input type="range" min="0" max="1080" value="300" class="effect-slider" id="gradientBottomHeight" oninput="app.updateGradientEffect()">
+                                    
+                                    <label>不透明度: <span id="gradientBottomOpacityValue">50%</span></label>
+                                    <input type="range" min="0" max="100" value="50" class="effect-slider" id="gradientBottomOpacity" oninput="app.updateGradientEffect()">
+                                    
+                                    <label>ブレンドモード:</label>
+                                    <select id="gradientBottomBlendMode" class="blend-mode-select" onchange="app.updateGradientEffect()">
+                                        <option value="normal">通常</option>
+                                        <option value="overlay">オーバーレイ</option>
+                                        <option value="screen">スクリーン</option>
+                                        <option value="multiply">乗算</option>
+                                        <option value="darken">比較(暗)</option>
+                                        <option value="lighten">比較(明)</option>
+                                        <option value="color-dodge">覆い焼き</option>
+                                        <option value="color-burn">焼き込み</option>
+                                        <option value="hard-light">ハードライト</option>
+                                        <option value="soft-light">ソフトライト</option>
+                                        <option value="difference">差の絶対値</option>
+                                        <option value="exclusion">除外</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleEffect('diffusion')">
+                                <span>✨ ディフュージョン撮影</span>
+                                <input type="checkbox" id="diffusionEnable" onchange="app.updatePreview()">
+                            </div>
+                            <div class="effect-controls" id="diffusionControls">
+                                <div class="effect-section">
+                                    <div class="effect-section-title">📷 ディフュージョンパラメータ</div>
+                                    
+                                    <label>ぼかし: <span id="diffusionBlurValue">0</span></label>
+                                    <input type="range" min="0" max="300" value="0" class="effect-slider" id="diffusionBlur" oninput="app.updateDiffusionEffect()">
+                                    
+                                    <label>コントラスト: <span id="diffusionContrastValue">0</span></label>
+                                    <input type="range" min="-100" max="100" value="0" class="effect-slider" id="diffusionContrast" oninput="app.updateDiffusionEffect()">
+                                    
+                                    <label>明るさ: <span id="diffusionBrightnessValue">0</span></label>
+                                    <input type="range" min="-100" max="100" value="0" class="effect-slider" id="diffusionBrightness" oninput="app.updateDiffusionEffect()">
+                                    
+                                    <label>彩度: <span id="diffusionSaturationValue">0</span></label>
+                                    <input type="range" min="-100" max="100" value="0" class="effect-slider" id="diffusionSaturation" oninput="app.updateDiffusionEffect()">
+                                    
+                                    <label>不透明度: <span id="diffusionOpacityValue">100%</span></label>
+                                    <input type="range" min="0" max="100" value="100" class="effect-slider" id="diffusionOpacity" oninput="app.updateDiffusionEffect()">
+                                </div>
+                                
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🎬 キーフレーム</div>
+                                    <div class="keyframe-controls">
+                                        <button class="small-button" onclick="app.addDiffusionKeyframe()">⏺ キーフレーム追加</button>
+                                        <button class="small-button" onclick="app.removeDiffusionKeyframe()">❌ 削除</button>
+                                        <button class="small-button" onclick="app.clearDiffusionKeyframes()">🗑️ 全削除</button>
+                                    </div>
+                                    <div class="keyframe-list" id="diffusionKeyframeList">
+                                        <div class="empty-message">キーフレームなし</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleEffect('colorKey')">
+                                <span>🎨 カラーキー</span>
+                                <input type="checkbox" id="colorKeyEnable" onchange="app.updatePreview()">
+                            </div>
+                            <div class="effect-controls" id="colorKeyControls">
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🎯 キー色設定</div>
+                                    
+                                    <label>キー色:</label>
+                                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                                        <input type="color" value="#00FF00" id="colorKeyColor" onchange="app.updateColorKeyEffect()">
+                                        <button class="small-button" onclick="app.pickColorFromCanvas()">💉 スポイト</button>
+                                    </div>
+                                    
+                                    <label>許容値: <span id="colorKeyToleranceValue">30</span></label>
+                                    <input type="range" min="0" max="100" value="30" class="effect-slider" id="colorKeyTolerance" oninput="app.updateColorKeyEffect()">
+                                    
+                                    <label>エッジのぼかし: <span id="colorKeyFeatherValue">5</span></label>
+                                    <input type="range" min="0" max="50" value="5" class="effect-slider" id="colorKeyFeather" oninput="app.updateColorKeyEffect()">
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="colorKeyInvert" onchange="app.updateColorKeyEffect()">
+                                        <span>反転（キー色のみ表示）</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleEffect('normalize')">
+                                <span>✨ ノーマライズ(スムージング)</span>
+                                <input type="checkbox" id="normalizeEnable" onchange="app.updatePreview()">
+                            </div>
+                            <div class="effect-controls" id="normalizeControls">
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🖌️ スムージング設定</div>
+                                    
+                                    <label>強度: <span id="normalizeStrengthValue">1</span></label>
+                                    <input type="range" min="1" max="3" value="1" step="1" class="effect-slider" id="normalizeStrength" oninput="app.updateNormalizeEffect()">
+                                    <div style="font-size: 11px; color: var(--biscuit-main); margin-top: 5px;">
+                                        💡 アニメ原画のジャギーを滑らかにします
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- クリッププロパティパネル -->
+                <div class="clip-properties-panel" id="clipPropertiesPanel" style="display: none;">
+                    <div class="sidebar-header">
+                        <h3>🎨 クリップエフェクト</h3>
+                        <div class="header-controls">
+                            <button class="round-button small" onclick="app.openClipEffectEditor()" title="別ウィンドウで編集">➕</button>
+                            <button class="round-button small" onclick="app.saveClipEffectSettings()" title="クリップエフェクト設定を保存">💾</button>
+                            <button class="round-button small" onclick="app.loadClipEffectSettings()" title="クリップエフェクト設定を読込">📂</button>
+                        </div>
+                    </div>
+                    <div class="clip-properties-content">
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>🎭 パペットアニメーション</span>
+                                <input type="checkbox" id="puppetEnabled">
+                                <button class="round-button small" onclick="app.openClipEffectDetailWindow('puppet')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+                        
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>🍃 風揺れエフェクト</span>
+                                <input type="checkbox" id="windShakeEnabled">
+                                <button class="round-button small" onclick="app.openClipEffectDetailWindow('windShake')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+                        
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>🌫️ ガウシアンブラー</span>
+                                <input type="checkbox" id="gaussianBlurEnabled">
+                                <button class="round-button small" onclick="app.openClipEffectDetailWindow('gaussianBlur')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+                        
+                        <div class="effect-item">
+                            <div class="effect-header">
+                                <span>📷 レンズブラー (被写界深度)</span>
+                                <input type="checkbox" id="lensBlurEnabled">
+                                <button class="round-button small" onclick="app.openClipEffectDetailWindow('lensBlur')" title="詳細設定">➕</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 以下は非表示で別ウィンドウ用に保持 -->
+                    <div class="clip-properties-content-hidden" style="display: none;">
+                        <!-- パペットアニメーション -->
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleClipEffect('puppet')">
+                                <span>🎭 パペットアニメーション</span>
+                                <input type="checkbox" id="puppetEnabled">
+                            </div>
+                            <div class="effect-controls" id="puppetControls" style="display: none;">
+                                <!-- パペット編集モード切替ボタン -->
+                                <div style="margin-bottom: 15px;">
+                                    <button id="puppetEditModeBtn" onclick="app.togglePuppetEditMode()" style="width: 100%; padding: 10px; background: var(--chocolate-main); border: none; border-radius: 4px; color: white; font-size: 13px; cursor: pointer; font-weight: bold;">
+                                        🎭 パペット編集モード OFF
+                                    </button>
+                                    <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 11px;">
+                                        💡 編集モードONにするとピンの移動・配置ができます。<br>
+                                        ONの間は通常のトランスフォーム操作(移動・回転・拡大)は無効になります。
+                                    </div>
+                                </div>
+                                
+                                <div class="effect-section">
+                                    <div class="effect-section-title">📌 ピン管理 (最大5個)</div>
+                                    
+                                    <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-bottom: 10px; border-radius: 4px; font-size: 11px;">
+                                        💡 ピンボタンをクリック→画像上でクリックして配置!
+                                    </div>
+                                    
+                                    <!-- ピンボタン01-05 -->
+                                    <div style="display: flex; flex-direction: column; gap: 8px; margin: 10px 0;">
+                                        <button class="puppet-pin-button" onclick="app.startAddPuppetPin(0)" style="display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--chocolate-main); border: none; border-radius: 4px; color: white; cursor: pointer;">
+                                            <img src="pin-01.png" style="width: 24px; height: 24px;">
+                                            <span>01 ピンを配置</span>
+                                        </button>
+                                        <button class="puppet-pin-button" onclick="app.startAddPuppetPin(1)" style="display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--chocolate-main); border: none; border-radius: 4px; color: white; cursor: pointer;">
+                                            <img src="pin-02.png" style="width: 24px; height: 24px;">
+                                            <span>02 ピンを配置</span>
+                                        </button>
+                                        <button class="puppet-pin-button" onclick="app.startAddPuppetPin(2)" style="display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--chocolate-main); border: none; border-radius: 4px; color: white; cursor: pointer;">
+                                            <img src="pin-03.png" style="width: 24px; height: 24px;">
+                                            <span>03 ピンを配置</span>
+                                        </button>
+                                        <button class="puppet-pin-button" onclick="app.startAddPuppetPin(3)" style="display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--chocolate-main); border: none; border-radius: 4px; color: white; cursor: pointer;">
+                                            <img src="pin-04.png" style="width: 24px; height: 24px;">
+                                            <span>04 ピンを配置</span>
+                                        </button>
+                                        <button class="puppet-pin-button" onclick="app.startAddPuppetPin(4)" style="display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--chocolate-main); border: none; border-radius: 4px; color: white; cursor: pointer;">
+                                            <img src="pin-05.png" style="width: 24px; height: 24px;">
+                                            <span>05 ピンを配置</span>
+                                        </button>
+                                    </div>
+                                    
+                                    <div id="puppetPinsList" style="margin-top: 10px; max-height: 200px; overflow-y: auto;">
+                                        <div class="empty-message">ピンなし</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="effect-section">
+                                    <div class="effect-section-title" style="cursor: pointer;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">⚙️ メッシュ設定 ▼</div>
+                                    <div style="display: none;">
+                                        <label>グリッド密度: <span id="puppetGridDensityValue">20</span></label>
+                                        <input type="range" min="5" max="50" value="20" step="1" class="effect-slider" id="puppetGridDensity">
+                                        
+                                        <label>追従強度: <span id="puppetStiffnessValue">50</span>%</label>
+                                        <input type="range" min="0" max="100" value="50" step="1" class="effect-slider" id="puppetStiffness">
+                                        <div style="font-size: 11px; color: #999; margin-top: 4px;">値が大きいほどピンへの吸い付きが強くなります</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 風揺れエフェクト -->
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleClipEffect('windShake')">
+                                <span>🍃 風揺れエフェクト</span>
+                                <input type="checkbox" id="windShakeEnabled">
+                            </div>
+                            <div class="effect-controls" id="windShakeControls" style="display: none;">
+                                <!-- 基本設定 -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">⚙️ 基本設定</div>
+                                    
+                                    <label>分割数: <span id="windShakeDivisionsValue">10</span></label>
+                                    <input type="range" min="1" max="50" value="10" step="1" class="effect-slider" id="windShakeDivisions">
+                                    
+                                    <label>揺れ角 (度): <span id="windShakeAngleValue">30</span></label>
+                                    <input type="range" min="0" max="360" value="30" step="1" class="effect-slider" id="windShakeAngle">
+                                    
+                                    <label>揺れ周期 (秒): <span id="windShakePeriodValue">2.0</span></label>
+                                    <input type="range" min="0.01" max="10" value="2.0" step="0.01" class="effect-slider" id="windShakePeriod">
+                                    
+                                    <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-top: 8px; border-radius: 4px; font-size: 11px;">
+                                        💡 <strong>ループアニメのヒント:</strong><br>
+                                        クリップの長さを揺れ周期の倍数にすると完全ループします<br>
+                                        <span id="windShakeLoopInfo" style="color: #FFD700;">周期 2.0秒 → 2秒, 4秒, 6秒でループ</span>
+                                    </div>
+                                    
+                                    <label>揺れズレ (度): <span id="windShakePhaseShiftValue">90</span></label>
+                                    <input type="range" min="-360" max="360" value="90" step="1" class="effect-slider" id="windShakePhaseShift">
+                                    
+                                    <label>センター (度): <span id="windShakeCenterValue">0</span></label>
+                                    <input type="range" min="-180" max="180" value="0" step="1" class="effect-slider" id="windShakeCenter">
+                                </div>
+                                
+                                <!-- 固定領域設定 -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">📐 固定領域</div>
+                                    
+                                    <label>上固定長 (%): <span id="windShakeTopFixedValue">10</span></label>
+                                    <input type="range" min="0" max="100" value="10" step="1" class="effect-slider" id="windShakeTopFixed">
+                                    
+                                    <label>下固定長 (%): <span id="windShakeBottomFixedValue">10</span></label>
+                                    <input type="range" min="0" max="100" value="10" step="1" class="effect-slider" id="windShakeBottomFixed">
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="windShakeFromBottom">
+                                        <span>下を基準にする</span>
+                                    </label>
+                                </div>
+                                
+                                <!-- 軸揺れ強度設定 -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🎯 軸揺れ強度</div>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="windShakeAxisMode">
+                                        <span>軸モードを有効化</span>
+                                    </label>
+                                    
+                                    <button class="small-button" id="windShakePickAxisBtn" style="width: 100%; margin: 10px 0;" disabled>
+                                        🎯 キャンバスをクリックして軸を選択
+                                    </button>
+                                    
+                                    <label>軸位置 (%): <span id="windShakeAxisPositionValue">50</span></label>
+                                    <input type="range" min="0" max="100" value="50" step="1" class="effect-slider" id="windShakeAxisPosition" disabled>
+                                    
+                                    <label>揺れ強度 (0-100): <span id="windShakeAxisStrengthValue">50</span></label>
+                                    <input type="range" min="0" max="100" value="50" step="1" class="effect-slider" id="windShakeAxisStrength" disabled>
+                                    
+                                    <label>影響範囲 (%): <span id="windShakeAxisRangeValue">30</span></label>
+                                    <input type="range" min="1" max="100" value="30" step="1" class="effect-slider" id="windShakeAxisRange" disabled>
+                                </div>
+                                
+                                <!-- ランダム設定 -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🎲 ランダム設定</div>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="windShakeRandomSwing">
+                                        <span>ランダム揺れを使用</span>
+                                    </label>
+                                    
+                                    <label>ランダムパターン: <span id="windShakeRandomPatternValue">0</span></label>
+                                    <input type="range" min="0" max="100" value="0" step="1" class="effect-slider" id="windShakeRandomPattern">
+                                </div>
+                                
+                                <!-- 横繰り返し設定 -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">↔️ 横繰り返し</div>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="windShakeHorizontalRepeat">
+                                        <span>横に繰り返す</span>
+                                    </label>
+                                    
+                                    <label>繰り返し個数: <span id="windShakeRepeatCountValue">3</span></label>
+                                    <input type="range" min="1" max="10" value="3" step="1" class="effect-slider" id="windShakeRepeatCount">
+                                    
+                                    <label>間隔 (px): <span id="windShakeSpacingValue">50</span></label>
+                                    <input type="range" min="-500" max="500" value="50" step="10" class="effect-slider" id="windShakeSpacing">
+                                    
+                                    <label>時間ずれ: <span id="windShakeTimeShiftValue">0.1</span></label>
+                                    <input type="range" min="0" max="2" value="0.1" step="0.01" class="effect-slider" id="windShakeTimeShift">
+                                </div>
+                                
+                                <!-- 高度な設定 -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🔧 高度な設定</div>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="windShakeAlphaCorrection" checked>
+                                        <span>アルファ補正</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="windShakeAntiAliasing" checked>
+                                        <span>破綻軽減 (アンチエイリアシング)</span>
+                                    </label>
+                                </div>
+                                
+                                <!-- プリセット -->
+                                <div class="effect-section">
+                                    <div class="effect-section-title">📋 プリセット</div>
+                                    <select id="windShakePreset" class="effect-slider" style="width: 100%; padding: 8px;">
+                                        <option value="">カスタム</option>
+                                        <option value="gentle_breeze">そよ風</option>
+                                        <option value="moderate_wind">普通の風</option>
+                                        <option value="strong_wind">強風</option>
+                                        <option value="flag">旗のはためき</option>
+                                        <option value="curtain">カーテンの揺れ</option>
+                                        <option value="underwater">水中の揺らぎ</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- ガウシアンブラー -->
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleClipEffect('gaussianBlur')">
+                                <span>🌫️ ガウシアンブラー</span>
+                                <input type="checkbox" id="gaussianBlurEnabled">
+                            </div>
+                            <div class="effect-controls" id="gaussianBlurControls" style="display: none;">
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🎛️ ブラー設定</div>
+                                    
+                                    <label>ブラー強度: <span id="gaussianBlurStrengthValue">10</span></label>
+                                    <input type="range" min="0" max="100" value="10" step="0.5" class="effect-slider" id="gaussianBlurStrength">
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="gaussianBlurHorizontalOnly">
+                                        <span>横方向のみ</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="gaussianBlurVerticalOnly">
+                                        <span>縦方向のみ</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- レンズブラー -->
+                        <div class="effect-item">
+                            <div class="effect-header" onclick="app.toggleClipEffect('lensBlur')">
+                                <span>📷 レンズブラー (被写界深度)</span>
+                                <input type="checkbox" id="lensBlurEnabled">
+                            </div>
+                            <div class="effect-controls" id="lensBlurControls" style="display: none;">
+                                <div class="effect-section">
+                                    <div class="effect-section-title">🎯 フォーカス設定</div>
+                                    
+                                    <div style="background: rgba(210, 105, 30, 0.2); padding: 8px; margin-bottom: 10px; border-radius: 4px; font-size: 11px;">
+                                        💡 アニメ背景用の円形ボケ効果（六角形絞り風）
+                                    </div>
+                                    
+                                    <button class="small-button" id="lensBlurPickFocusBtn" style="width: 100%; margin: 10px 0;">
+                                        🎯 キャンバスをクリックしてフォーカス位置を選択
+                                    </button>
+                                    
+                                    <label>フォーカス位置 (Y%): <span id="lensBlurFocusPositionValue">50</span></label>
+                                    <input type="range" min="0" max="100" value="50" step="1" class="effect-slider" id="lensBlurFocusPosition">
+                                    
+                                    <label>フォーカス範囲: <span id="lensBlurFocusRangeValue">20</span></label>
+                                    <input type="range" min="1" max="100" value="20" step="1" class="effect-slider" id="lensBlurFocusRange">
+                                    
+                                    <label>最大ブラー強度: <span id="lensBlurStrengthValue">30</span></label>
+                                    <input type="range" min="0" max="100" value="30" step="0.5" class="effect-slider" id="lensBlurStrength">
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="lensBlurInvert">
+                                        <span>反転（フォーカス位置をぼかす）</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 非表示のファイル入力 -->
+    <input type="file" id="fileInput" multiple accept="image/*,video/*,audio/*" style="display: none;" onchange="app.handleFileSelect(event)">
+    <input type="file" id="projectInput" accept=".json" style="display: none;" onchange="app.handleProjectLoad(event)">
+    <input type="file" id="effectSettingsInput" accept=".json" style="display: none;" onchange="app.handleEffectSettingsLoad(event)">
+    <input type="file" id="clipEffectSettingsInput" accept=".json" style="display: none;" onchange="app.handleClipEffectSettingsLoad(event)">
+    <input type="file" id="assetsZipInput" accept=".zip" style="display: none;" onchange="app.handleAssetsZipLoad(event)">
+
+    <!-- JSZip ライブラリ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- ユーティリティ -->
+    <script src="modules/utils/math.js"></script>
+    <script src="modules/utils/drawing.js"></script>
+    <script src="modules/utils/storage.js"></script>
+    
+    <!-- モジュール -->
+    <script src="modules/clipping.js"></script>
+    <script src="modules/sceneManager.js"></script>
+    
+    <!-- コアアプリケーション（既存機能） -->
+    <script src="app-core.js"></script>
+    
+    <!-- 拡張機能（新機能） -->
+    <script src="app-extensions.js"></script>
+    
+    <!-- メインアプリケーション（統合） -->
+    <script src="app.js"></script>
+</body>
+</html>
