@@ -2,9 +2,19 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bear Timeline Editor Web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Starlit Timeline">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#1a1410">
+    <meta name="description" content="Starlit Timeline Editor - ブラウザベースの動画タイムラインエディタ">
+    <title>Starlit Timeline Editor Web</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 </head>
 <body>
     <div id="app">
@@ -49,7 +59,8 @@
             <div class="menu-item">
                 <span>書き出し</span>
                 <div class="submenu">
-                    <div class="submenu-item" onclick="app.exportWebM()">動画書き出し (WebM・透過対応)</div>
+                    <div class="submenu-item" onclick="app.exportWebM(true)">動画書き出し (WebM・透過・音声あり)</div>
+                    <div class="submenu-item" onclick="app.exportWebM(false)">動画書き出し (WebM・透過・音声なし)</div>
                     <div class="submenu-item" onclick="app.exportSequence()">連番PNG書き出し</div>
                     <div class="submenu-item" onclick="app.exportAudio()">音声のみ書き出し</div>
                 </div>
@@ -116,6 +127,7 @@
                     </div>
                     <div class="preview-controls">
                         <div class="time-display" id="timeDisplay">00:00:00.000</div>
+                        <button class="small-button" onclick="app.exportCurrentFramePNG()" title="現在のフレームをPNG保存" style="margin-left: 10px; padding: 6px 12px;">📷 静止画保存</button>
                         <div class="resolution-display">1920 x 1080</div>
                     </div>
                 </div>
@@ -133,8 +145,11 @@
                         </div>
                         <div class="export-range-controls">
                             <div class="preview-zoom-control" style="margin-right: 15px;">
-                                <label>🔍 <span id="previewZoomValue">100%</span></label>
+                                <label>🔍 <span id="previewZoomValue">Fit</span></label>
                                 <input type="range" min="25" max="200" value="100" step="5" id="previewZoomSlider" style="width: 120px;">
+                                <button class="small-button" onclick="app.fitPreview()" title="Fitに戻す">Fit</button>
+                                <button class="small-button" onclick="app.previewZoom = 100; app.previewFit = false; app.updatePreviewZoom();" title="100%実寸">100%</button>
+                                <button class="small-button" onclick="app.openFullSizePreview()" title="原寸ウィンドウ">🪟</button>
                             </div>
                             <label>📹 FPS:</label>
                             <select id="fpsSelect" class="fps-select" onchange="app.changeFPS(this.value)">
@@ -217,10 +232,19 @@
 
             <!-- 右サイドバー: プロパティ -->
             <div class="sidebar right-sidebar">
+                <!-- エフェクトボタンエリア（一番上） -->
+                <div style="display: flex; gap: 8px; padding: 12px; background: var(--chocolate-darker); border-bottom: 2px solid var(--chocolate-dark);">
+                    <button onclick="app.openClipEffectWindow()" style="flex: 1; padding: 16px; background: var(--accent-orange); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                        ✨ クリップエフェクト
+                    </button>
+                    <button onclick="app.openGlobalEffectWindow()" style="flex: 1; padding: 16px; background: var(--chocolate-main); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                        🪄 プロジェクトエフェクト
+                    </button>
+                </div>
+                
                 <div class="properties-panel">
                     <div class="sidebar-header">
                         <h3>⚙️ プロパティ</h3>
-                        <button class="round-button" onclick="app.openClipEffectWindow()" title="エフェクト編集" style="background: var(--accent-orange); font-size: 16px;">✨</button>
                     </div>
                     <div id="propertiesContent" class="properties-content">
                         <div class="empty-message">クリップを選択してください</div>
@@ -228,53 +252,6 @@
                 </div>
 
                 <div class="effects-panel" style="display: none;">
-                    <div class="sidebar-header">
-                        <h3>✨ エフェクト</h3>
-                        <div class="header-controls">
-                            <button class="round-button small" onclick="app.openEffectEditor()" title="別ウィンドウで編集">➕</button>
-                        </div>
-                    </div>
-                    <div class="effects-content">
-                        <div class="effect-item">
-                            <div class="effect-header">
-                                <span>🎬 映画風レターボックス</span>
-                                <input type="checkbox" id="letterboxEnable" onchange="app.updatePreview()">
-                                <button class="round-button small" onclick="app.openEffectDetailWindow('letterbox')" title="詳細設定">➕</button>
-                            </div>
-                        </div>
-
-                        <div class="effect-item">
-                            <div class="effect-header">
-                                <span>🌈 グラデーション</span>
-                                <input type="checkbox" id="gradientEnable" onchange="app.updatePreview()">
-                                <button class="round-button small" onclick="app.openEffectDetailWindow('gradient')" title="詳細設定">➕</button>
-                            </div>
-                        </div>
-
-                        <div class="effect-item">
-                            <div class="effect-header">
-                                <span>✨ ディフュージョン撮影</span>
-                                <input type="checkbox" id="diffusionEnable" onchange="app.updatePreview()">
-                                <button class="round-button small" onclick="app.openEffectDetailWindow('diffusion')" title="詳細設定">➕</button>
-                            </div>
-                        </div>
-
-                        <div class="effect-item">
-                            <div class="effect-header">
-                                <span>🎨 カラーキー</span>
-                                <input type="checkbox" id="colorKeyEnable" onchange="app.updatePreview()">
-                                <button class="round-button small" onclick="app.openEffectDetailWindow('colorKey')" title="詳細設定">➕</button>
-                            </div>
-                        </div>
-
-                        <div class="effect-item">
-                            <div class="effect-header">
-                                <span>✨ ノーマライズ(スムージング)</span>
-                                <input type="checkbox" id="normalizeEnable" onchange="app.updatePreview()">
-                                <button class="round-button small" onclick="app.openEffectDetailWindow('normalize')" title="詳細設定">➕</button>
-                            </div>
-                        </div>
-                    </div>
                     
                     <!-- 以下は非表示で別ウィンドウ用に保持 -->
                     <div class="effects-content-hidden" style="display: none;">
@@ -789,5 +766,144 @@
     
     <!-- メインアプリケーション（統合） -->
     <script src="app.js"></script>
+    
+    <!-- Service Worker登録 & PWA -->
+    <script>
+        // アイコン生成関数
+        function generateAppIcon(size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // 背景グラデーション
+            const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+            bgGrad.addColorStop(0, '#3d2f25');
+            bgGrad.addColorStop(1, '#1a1410');
+            ctx.fillStyle = bgGrad;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, size * 0.15);
+            ctx.fill();
+            
+            // タイムラインバー
+            const barHeight = size * 0.08;
+            const barColors = ['#c4a574', '#a67b4b', '#8b5e3c'];
+            const startY = size * 0.25;
+            
+            barColors.forEach((color, i) => {
+                const y = startY + i * (barHeight + size * 0.06);
+                const width = size * (0.7 - i * 0.1);
+                const x = size * 0.15;
+                
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.roundRect(x, y, width, barHeight, barHeight * 0.3);
+                ctx.fill();
+            });
+            
+            // 再生ヘッド
+            ctx.strokeStyle = '#ffeedd';
+            ctx.lineWidth = size * 0.02;
+            ctx.beginPath();
+            ctx.moveTo(size * 0.45, size * 0.2);
+            ctx.lineTo(size * 0.45, size * 0.65);
+            ctx.stroke();
+            
+            // 再生ヘッド三角
+            ctx.fillStyle = '#ffeedd';
+            ctx.beginPath();
+            ctx.moveTo(size * 0.45, size * 0.18);
+            ctx.lineTo(size * 0.40, size * 0.12);
+            ctx.lineTo(size * 0.50, size * 0.12);
+            ctx.closePath();
+            ctx.fill();
+            
+            // 星
+            const starX = size * 0.75;
+            const starY = size * 0.8;
+            const starRadius = size * 0.12;
+            
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 4 * Math.PI / 5) - Math.PI / 2;
+                const x = starX + starRadius * Math.cos(angle);
+                const y = starY + starRadius * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            
+            return canvas.toDataURL('image/png');
+        }
+        
+        // 動的アイコン設定（PNGがない場合のフォールバック）
+        window.addEventListener('load', () => {
+            // アイコンリンクを更新
+            const icon192 = generateAppIcon(192);
+            const icon512 = generateAppIcon(512);
+            
+            // 既存のアイコンリンクを更新
+            let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+            if (appleIcon) {
+                appleIcon.href = icon192;
+            }
+            
+            // faviconも設定
+            let favicon = document.querySelector('link[rel="icon"][sizes="192x192"]');
+            if (favicon) {
+                favicon.href = icon192;
+            }
+        });
+        
+        // Service Worker登録
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then((registration) => {
+                        console.log('✅ Service Worker registered:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.log('❌ Service Worker registration failed:', error);
+                    });
+            });
+        }
+        
+        // PWAインストールプロンプト
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // インストールボタンを表示（メニューバーに追加）
+            const installBtn = document.createElement('div');
+            installBtn.className = 'menu-item';
+            installBtn.innerHTML = '<span style="color: #ffd700;">📱 アプリをインストール</span>';
+            installBtn.style.cursor = 'pointer';
+            installBtn.onclick = async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log('PWA install:', outcome);
+                    if (outcome === 'accepted') {
+                        installBtn.remove();
+                    }
+                    deferredPrompt = null;
+                }
+            };
+            
+            const menuBar = document.querySelector('.menu-bar');
+            if (menuBar) {
+                menuBar.appendChild(installBtn);
+            }
+        });
+        
+        // インストール完了時
+        window.addEventListener('appinstalled', () => {
+            console.log('✅ PWA installed successfully');
+            deferredPrompt = null;
+        });
+    </script>
 </body>
 </html>

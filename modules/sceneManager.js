@@ -32,7 +32,7 @@ class SceneManager {
     }
     
     // 新しいシーンを作成
-    createScene(name = null, parentSceneId = null) {
+    createScene(name = null, parentSceneId = null, skipHistory = false) {
         const sceneId = `scene_${this.sceneIdCounter++}`;
         const sceneName = name || `Scene ${this.sceneIdCounter}`;
         
@@ -55,7 +55,9 @@ class SceneManager {
             parent.childScenes.push(sceneId);
         }
         
-        this.app.saveHistory('シーン作成');
+        if (!skipHistory) {
+            this.app.saveHistory('シーン作成');
+        }
         this.updateScenePanel();
         
         return sceneId;
@@ -159,7 +161,9 @@ class SceneManager {
         const scene = this.scenes[this.currentSceneId];
         if (!scene) return;
         
-        scene.clips = JSON.parse(JSON.stringify(this.app.clips));
+        // クリップを直接参照として保存（シャローコピー）
+        // こうすることでimageElement等の非シリアライズ要素も保持される
+        scene.clips = [...this.app.clips]; // 配列のシャローコピー
         scene.trackCount = this.app.trackCount;
         scene.duration = this.app.duration;
     }
@@ -169,18 +173,9 @@ class SceneManager {
         const scene = this.scenes[sceneId];
         if (!scene) return;
         
-        // クリップをロード
-        this.app.clips = JSON.parse(JSON.stringify(scene.clips));
-        
-        // 画像要素を再構築
-        for (const clip of this.app.clips) {
-            if (clip.asset && clip.asset.type === 'image') {
-                const asset = this.app.assets.find(a => a.id === clip.asset.id);
-                if (asset && asset.element) {
-                    clip.imageElement = asset.element;
-                }
-            }
-        }
+        // クリップを直接参照としてロード（シャローコピー）
+        // こうすることでimageElement等の非シリアライズ要素も保持される
+        this.app.clips = [...scene.clips]; // 配列のシャローコピー
         
         this.app.trackCount = scene.trackCount;
         this.app.duration = scene.duration;
@@ -287,6 +282,12 @@ class SceneManager {
         nameSpan.textContent = scene.name;
         nameSpan.style.flex = '1';
         sceneItem.appendChild(nameSpan);
+        
+        // クリップ数表示
+        const clipCountSpan = document.createElement('span');
+        clipCountSpan.textContent = `(${scene.clips.length}クリップ)`;
+        clipCountSpan.style.cssText = 'font-size: 11px; opacity: 0.7; margin-right: 8px;';
+        sceneItem.appendChild(clipCountSpan);
         
         // 時間表示
         const durationSpan = document.createElement('span');

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Starlit Timeline Editor - アイコン生成</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #1a1410;
+            color: #ffeedd;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+        h1 { color: #c4a574; }
+        .icons { display: flex; gap: 40px; margin: 40px 0; }
+        .icon-box { text-align: center; }
+        canvas { border: 2px solid #c4a574; border-radius: 15px; }
+        button {
+            background: #c4a574;
+            color: #1a1410;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover { background: #d4b584; }
+        p { color: #999; max-width: 600px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>Starlit Timeline Editor アイコン生成</h1>
+    <p>下のボタンをクリックしてアイコンをダウンロードし、アプリのフォルダに保存してください。</p>
+    
+    <div class="icons">
+        <div class="icon-box">
+            <canvas id="icon192" width="192" height="192"></canvas>
+            <br>
+            <button onclick="download('icon192', 'icon-192.png')">192x192 ダウンロード</button>
+        </div>
+        <div class="icon-box">
+            <canvas id="icon512" width="512" height="512"></canvas>
+            <br>
+            <button onclick="download('icon512', 'icon-512.png')">512x512 ダウンロード</button>
+        </div>
+    </div>
+    
+    <script>
+        function generateIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // 背景グラデーション
+            const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+            bgGrad.addColorStop(0, '#3d2f25');
+            bgGrad.addColorStop(1, '#1a1410');
+            ctx.fillStyle = bgGrad;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, size * 0.15);
+            ctx.fill();
+            
+            // タイムラインバー
+            const barHeight = size * 0.08;
+            const barColors = ['#c4a574', '#a67b4b', '#8b5e3c'];
+            const startY = size * 0.25;
+            
+            barColors.forEach((color, i) => {
+                const y = startY + i * (barHeight + size * 0.06);
+                const width = size * (0.7 - i * 0.1);
+                const x = size * 0.15;
+                
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.roundRect(x, y, width, barHeight, barHeight * 0.3);
+                ctx.fill();
+            });
+            
+            // 再生ヘッド
+            ctx.strokeStyle = '#ffeedd';
+            ctx.lineWidth = size * 0.02;
+            ctx.beginPath();
+            ctx.moveTo(size * 0.45, size * 0.2);
+            ctx.lineTo(size * 0.45, size * 0.65);
+            ctx.stroke();
+            
+            // 再生ヘッド三角
+            ctx.fillStyle = '#ffeedd';
+            ctx.beginPath();
+            ctx.moveTo(size * 0.45, size * 0.18);
+            ctx.lineTo(size * 0.40, size * 0.12);
+            ctx.lineTo(size * 0.50, size * 0.12);
+            ctx.closePath();
+            ctx.fill();
+            
+            // 星
+            const starX = size * 0.75;
+            const starY = size * 0.8;
+            const starRadius = size * 0.12;
+            
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 4 * Math.PI / 5) - Math.PI / 2;
+                const x = starX + starRadius * Math.cos(angle);
+                const y = starY + starRadius * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        function download(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // 生成
+        generateIcon('icon192', 192);
+        generateIcon('icon512', 512);
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 // ========================================
 // app.js - メインアプリケーション（統合版）
-// Version: 2.3.0 - 3分割アーキテクチャ + 複数選択機能
+// Version: 2.3.6 - クリップドラッグ中のプレビュー更新を修正
 // ========================================
 
 // app-core.jsで定義されたStarlitTimelineAppクラスを継承
@@ -11,9 +11,12 @@ class StarlitTimelineEditor extends StarlitTimelineApp {
         // 拡張機能を初期化
         this.extensions = new StarlitTimelineExtensions(this);
         
-        console.log('✨ Starlit Timeline Editor v2.3.0 loaded');
+        console.log('✨ Starlit Timeline Editor v2.3.6 loaded');
         console.log('📦 Architecture: Core + Extensions');
         console.log('🎯 New Features: Multi-select with Shift+Click, Group clips into scenes');
+        console.log('🐛 Fixed: Scene移動でimageElement等を完全保持（シャローコピー）');
+        console.log('🐛 Fixed: クリップドラッグ中もプレビューをリアルタイム更新');
+        console.log('🐛 Fixed: Duplicate file ID issue & Always-open properties panel');
     }
     
     // 拡張機能の初期化フック（オーバーライド可能）

@@ -374,7 +374,11 @@ body {
     background: #000;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, margin 0.2s ease;
+    /* 高解像度対応 */
+    image-rendering: crisp-edges;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: -webkit-optimize-contrast;
 }
 
 #overlayCanvas {
@@ -386,6 +390,9 @@ body {
     pointer-events: none;
     /* SVGははみ出しを表示できる */
     overflow: visible;
+    /* previewCanvasと同じtransitionとtransform-originを設定 */
+    transition: transform 0.2s ease, margin 0.2s ease;
+    transform-origin: center center;
 }
 
 .preview-controls {
@@ -1428,4 +1435,145 @@ input[type="checkbox"] {
 
 .scene-breadcrumb span:hover {
     color: var(--accent-orange);
+}
+
+/* スポイトツール用カーソル */
+.eyedropper-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M2.5 21.5l5-5"/><path d="M7.5 16.5l9-9"/><circle cx="19" cy="5" r="3" fill="%23FF9800"/><path d="M7.5 16.5l-4 4" stroke="%23FF9800"/></svg>') 2 22, crosshair !important;
+}
+
+.eyedropper-active {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M2.5 21.5l5-5"/><path d="M7.5 16.5l9-9"/><circle cx="19" cy="5" r="3" fill="%23FF9800"/><path d="M7.5 16.5l-4 4" stroke="%23FF9800"/></svg>') 2 22, crosshair !important;
+}
+
+/* ========================================
+   タブレット・タッチ操作対応
+======================================== */
+
+/* タッチデバイスでのタップターゲット拡大 */
+@media (pointer: coarse) {
+    .menu-item {
+        padding: 16px 24px;
+        min-height: 48px;
+    }
+    
+    .submenu-item {
+        padding: 14px 20px;
+        min-height: 44px;
+    }
+    
+    .toolbar button, .small-button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px 14px;
+    }
+    
+    .property-slider {
+        height: 32px;
+    }
+    
+    input[type="range"] {
+        height: 32px;
+    }
+    
+    input[type="range"]::-webkit-slider-thumb {
+        width: 28px;
+        height: 28px;
+    }
+    
+    input[type="range"]::-moz-range-thumb {
+        width: 28px;
+        height: 28px;
+    }
+    
+    select, input[type="text"], input[type="number"] {
+        min-height: 44px;
+        font-size: 16px; /* iOSのズーム防止 */
+    }
+    
+    .asset-item {
+        padding: 12px;
+        min-height: 48px;
+    }
+    
+    .track-header {
+        min-height: 60px;
+    }
+    
+    /* プロパティパネルの調整 */
+    .property-label {
+        font-size: 14px;
+        padding: 8px 0;
+    }
+    
+    .property-group {
+        padding: 10px 0;
+    }
+    
+    /* タブボタンの拡大 */
+    .tab-button, .clip-effects-window button {
+        min-height: 44px;
+        padding: 12px 16px;
+    }
+}
+
+/* タッチ操作中のハイライト無効化 */
+.timeline-canvas, .preview-canvas, .ruler-canvas {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+}
+
+/* タイムラインスクロールエリア */
+#timelineScroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+/* PWAインストールボタン */
+.menu-item[style*="cursor: pointer"] {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* タッチフィードバック */
+@media (pointer: coarse) {
+    .menu-item:active,
+    .submenu-item:active,
+    .toolbar button:active,
+    .small-button:active,
+    .asset-item:active {
+        transform: scale(0.95);
+        transition: transform 0.1s;
+    }
+}
+
+/* 横向き推奨表示（縦向きの小さい画面用） */
+@media (max-width: 768px) and (orientation: portrait) {
+    body::before {
+        content: '📱 横向きでの使用を推奨します';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: rgba(107, 68, 35, 0.95);
+        color: var(--biscuit-light);
+        text-align: center;
+        padding: 12px;
+        z-index: 10001;
+        font-size: 14px;
+    }
+}
+
+/* スプラッシュスクリーン（PWA起動時） */
+@media (display-mode: standalone) {
+    body {
+        background: var(--bg-dark);
+    }
 }
