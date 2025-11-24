@@ -138,10 +138,6 @@
                     <div class="timeline-header">
                         <div class="timeline-title">
                             <span>⏱️ タイムライン</span>
-                            <div class="scene-breadcrumb" id="sceneBreadcrumb" style="margin-left: 15px; display: inline-flex; align-items: center; gap: 5px; font-size: 13px;">
-                                <!-- パンくずリストがここに動的に生成される -->
-                            </div>
-                            <button class="small-button" onclick="app.sceneManager.goToParentScene()" title="上の階層に戻る" style="margin-left: 10px;">⬆️ 上へ</button>
                         </div>
                         <div class="export-range-controls">
                             <div class="preview-zoom-control" style="margin-right: 15px;">
@@ -151,7 +147,6 @@
                                 <button class="small-button" onclick="app.previewZoom = 100; app.previewFit = false; app.updatePreviewZoom();" title="100%実寸">100%</button>
                                 <button class="small-button" onclick="app.openFullSizePreview()" title="原寸ウィンドウ">🪟</button>
                             </div>
-                            <label>📹 FPS:</label>
                             <select id="fpsSelect" class="fps-select" onchange="app.changeFPS(this.value)">
                                 <option value="24">24 fps</option>
                                 <option value="25">25 fps</option>
@@ -161,23 +156,19 @@
                                 <option value="120">120 fps</option>
                             </select>
                             <div class="control-separator"></div>
-                            <label>書き出し範囲:</label>
-                            <input type="number" id="exportStart" value="0" min="0" step="0.1" class="time-input">
+                            <input type="number" id="exportStart" value="0" min="0" step="0.1" class="time-input" title="書き出し開始">
                             <span>～</span>
-                            <input type="number" id="exportEnd" value="10" min="0" step="0.1" class="time-input">
+                            <input type="number" id="exportEnd" value="10" min="0" step="0.1" class="time-input" title="書き出し終了">
                             <span>秒</span>
-                            <button class="round-button small" onclick="app.setExportRangeToAll()">⤢ 全体</button>
-                            <button class="round-button small" onclick="app.setExportRangeToSelection()">⬚ 選択</button>
                         </div>
                     </div>
 
                     <!-- タイムラインコントロール -->
                     <div class="timeline-controls">
-                        <label>🔍 ズーム:</label>
+                        <span>🔍</span>
                         <input type="range" id="zoomSlider" min="10" max="200" value="50" class="styled-slider">
                         <span id="zoomValue">50 px/秒</span>
                         <div class="control-separator"></div>
-                        <label>📊 トラック:</label>
                         <button class="round-button small" onclick="app.decreaseTrackCount()">➖</button>
                         <span id="trackCount" class="track-count">5</span>
                         <button class="round-button small" onclick="app.increaseTrackCount()">➕</button>
@@ -190,10 +181,10 @@
                         </button>
                         <label class="checkbox-label">
                             <input type="checkbox" id="loopPlaybackCheckbox">
-                            <span>ループ再生</span>
+                            <span>ループ</span>
                         </label>
-                        <button class="small-button" onclick="app.setInPoint()" title="インポイント設定 (I)">📍 In</button>
-                        <button class="small-button" onclick="app.setOutPoint()" title="アウトポイント設定 (O)">📍 Out</button>
+                        <button class="small-button" onclick="app.setInPoint()" title="インポイント設定 (I)">In</button>
+                        <button class="small-button" onclick="app.setOutPoint()" title="アウトポイント設定 (O)">Out</button>
                         <button class="small-button" onclick="app.clearInOutPoints()" title="範囲クリア">❌</button>
                         <div class="control-separator"></div>
                         <button class="icon-button" onclick="app.undo()" title="元に戻す (Ctrl+Z)">

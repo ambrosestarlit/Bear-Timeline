@@ -157,6 +157,15 @@ class StarlitTimelineApp {
         this.isDraggingPuppetPin = false; // ピンドラッグ中フラグ
         this.draggingPinId = null; // ドラッグ中のピンID
         
+        // タッチドラッグ（素材→タイムライン）用
+        this.assetTouchDrag = {
+            active: false,
+            assetId: null,
+            ghostElement: null,
+            startX: 0,
+            startY: 0
+        };
+        
         // プレビューズーム機能
         this.previewZoom = 100; // パーセント表示（100% = 原寸）
         this.previewFit = true; // true: フィット表示, false: ズーム表示
@@ -218,6 +227,9 @@ class StarlitTimelineApp {
     }
     
     init() {
+        // タブレット検出と設定調整
+        this.detectAndAdjustForTablet();
+        
         // キャッシュから設定を復元
         this.loadSettingsFromCache();
         
@@ -272,6 +284,36 @@ class StarlitTimelineApp {
         });
         
         console.log('✨ エフェクト設定を復元しました');
+    }
+    
+    // タブレット検出と設定調整
+    detectAndAdjustForTablet() {
+        const isTablet = (
+            // タッチデバイスかつ画面幅がタブレットサイズ
+            ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+            window.innerWidth >= 600 && window.innerWidth <= 1400
+        ) || (
+            // pointer: coarse を検出
+            window.matchMedia('(pointer: coarse)').matches &&
+            window.innerWidth <= 1400
+        );
+        
+        this.isTabletDevice = isTablet;
+        
+        if (isTablet) {
+            console.log('📱 タブレットデバイスを検出しました');
+            
+            // トラック高さを調整（小さめに）
+            this.trackHeight = 65;
+            
+            // タイムラインのフォントサイズ設定
+            this.tabletFontScale = 0.9;
+            
+            // CSSクラスを追加
+            document.body.classList.add('tablet-mode');
+        } else {
+            this.tabletFontScale = 1.0;
+        }
     }
     
     setupEventListeners() {
@@ -1509,6 +1551,9 @@ class StarlitTimelineApp {
                 e.dataTransfer.setData('assetId', asset.id);
             });
             
+            // タッチドラッグイベント（タブレット対応）
+            this.setupAssetTouchDrag(item, asset.id);
+            
             // シーン素材のダブルクリックでシーンに移動
             if (asset.type === 'scene') {
                 item.addEventListener('dblclick', () => {
@@ -1519,6 +1564,144 @@ class StarlitTimelineApp {
             
             explorer.appendChild(item);
         });
+    }
+    
+    // タッチドラッグセットアップ（タブレット対応）
+    setupAssetTouchDrag(element, assetId) {
+        let touchStartTime = 0;
+        let touchMoved = false;
+        
+        element.addEventListener('touchstart', (e) => {
+            // 複数指の場合はスキップ
+            if (e.touches.length > 1) return;
+            
+            touchStartTime = Date.now();
+            touchMoved = false;
+            
+            const touch = e.touches[0];
+            this.assetTouchDrag.startX = touch.clientX;
+            this.assetTouchDrag.startY = touch.clientY;
+            this.assetTouchDrag.assetId = assetId;
+        }, { passive: true });
+        
+        element.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) return;
+            if (!this.assetTouchDrag.assetId) return;
+            
+            const touch = e.touches[0];
+            const dx = touch.clientX - this.assetTouchDrag.startX;
+            const dy = touch.clientY - this.assetTouchDrag.startY;
+            
+            // 一定距離移動したらドラッグ開始
+            if (!this.assetTouchDrag.active && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+                this.assetTouchDrag.active = true;
+                this.createAssetDragGhost(assetId, touch.clientX, touch.clientY);
+                e.preventDefault();
+            }
+            
+            if (this.assetTouchDrag.active) {
+                e.preventDefault();
+                this.updateAssetDragGhost(touch.clientX, touch.clientY);
+            }
+        }, { passive: false });
+        
+        element.addEventListener('touchend', (e) => {
+            if (this.assetTouchDrag.active) {
+                e.preventDefault();
+                
+                // ドロップ先を判定
+                const lastTouch = e.changedTouches[0];
+                const dropTarget = document.elementFromPoint(lastTouch.clientX, lastTouch.clientY);
+                
+                // タイムライン上へのドロップか確認
+                const timelineScroll = document.getElementById('timelineScroll');
+                const timelineCanvas = document.getElementById('timelineCanvas');
+                
+                if (dropTarget === timelineCanvas || 
+                    (timelineScroll && timelineScroll.contains(dropTarget))) {
+                    
+                    const canvasRect = timelineCanvas.getBoundingClientRect();
+                    const scrollContainer = timelineScroll;
+                    
+                    const x = (lastTouch.clientX - canvasRect.left) + scrollContainer.scrollLeft;
+                    const y = lastTouch.clientY - canvasRect.top;
+                    
+                    const time = x / this.zoom;
+                    const track = Math.floor(y / this.trackHeight);
+                    
+                    this.addClipFromAsset(this.assetTouchDrag.assetId, time, track);
+                }
+                
+                this.removeAssetDragGhost();
+            } else if (!touchMoved && Date.now() - touchStartTime < 300) {
+                // タップ（選択など）の処理は必要に応じて追加
+            }
+            
+            // 状態リセット
+            this.assetTouchDrag.active = false;
+            this.assetTouchDrag.assetId = null;
+        }, { passive: false });
+        
+        element.addEventListener('touchcancel', () => {
+            this.removeAssetDragGhost();
+            this.assetTouchDrag.active = false;
+            this.assetTouchDrag.assetId = null;
+        });
+    }
+    
+    // ドラッグ中のゴースト要素を作成
+    createAssetDragGhost(assetId, x, y) {
+        const asset = this.assets.find(a => a.id == assetId);
+        if (!asset) return;
+        
+        const ghost = document.createElement('div');
+        ghost.id = 'assetDragGhost';
+        ghost.style.cssText = `
+            position: fixed;
+            left: ${x - 30}px;
+            top: ${y - 30}px;
+            width: 60px;
+            height: 60px;
+            background: var(--chocolate-main);
+            border: 2px solid var(--accent-orange);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            z-index: 10000;
+            pointer-events: none;
+            opacity: 0.9;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        `;
+        
+        const icon = {
+            'image': '🖼️',
+            'video': '🎬',
+            'audio': '🎵',
+            'sequence': '📹',
+            'scene': '🎬'
+        }[asset.type] || '📄';
+        
+        ghost.textContent = icon;
+        document.body.appendChild(ghost);
+        this.assetTouchDrag.ghostElement = ghost;
+    }
+    
+    // ゴースト要素の位置更新
+    updateAssetDragGhost(x, y) {
+        if (this.assetTouchDrag.ghostElement) {
+            this.assetTouchDrag.ghostElement.style.left = `${x - 30}px`;
+            this.assetTouchDrag.ghostElement.style.top = `${y - 30}px`;
+        }
+    }
+    
+    // ゴースト要素を削除
+    removeAssetDragGhost() {
+        if (this.assetTouchDrag.ghostElement) {
+            this.assetTouchDrag.ghostElement.remove();
+            this.assetTouchDrag.ghostElement = null;
+        }
     }
     
     // 素材フィルター設定
@@ -1929,7 +2112,8 @@ class StarlitTimelineApp {
             ctx.fillRect(x, y, 4, height);
             
             ctx.fillStyle = '#FF8C00';
-            ctx.font = 'bold 10px sans-serif';
+            const trimFontSize = this.isTabletDevice ? 9 : 10;
+            ctx.font = `bold ${trimFontSize}px sans-serif`;
             ctx.fillText('✂', x + 6, y + 15);
         }
         
@@ -1942,12 +2126,15 @@ class StarlitTimelineApp {
         }[clip.asset.type] || '📄';
         
         ctx.fillStyle = '#F5DEB3';
-        ctx.font = '16px sans-serif';
-        ctx.fillText(icon, x + 5, y + 25);
+        const iconFontSize = this.isTabletDevice ? 14 : 16;
+        ctx.font = `${iconFontSize}px sans-serif`;
+        ctx.fillText(icon, x + 5, y + (this.isTabletDevice ? 22 : 25));
         
-        ctx.font = '12px sans-serif';
-        const displayName = clip.asset.name.length > 20 ? clip.asset.name.substring(0, 20) + '...' : clip.asset.name;
-        ctx.fillText(displayName, x + 25, y + 20);
+        const nameFontSize = this.isTabletDevice ? 10 : 12;
+        ctx.font = `${nameFontSize}px sans-serif`;
+        const maxNameLen = this.isTabletDevice ? 15 : 20;
+        const displayName = clip.asset.name.length > maxNameLen ? clip.asset.name.substring(0, maxNameLen) + '...' : clip.asset.name;
+        ctx.fillText(displayName, x + (this.isTabletDevice ? 22 : 25), y + (this.isTabletDevice ? 18 : 20));
         
         // トランジションインジケーター
         this.drawTransitionIndicators(clip, x, y, width, height);
@@ -1967,6 +2154,8 @@ class StarlitTimelineApp {
         // 安全チェック
         if (!clip.transitionIn || !clip.transitionOut) return;
         
+        const transFontSize = this.isTabletDevice ? 9 : 10;
+        
         // トランジションイン
         if (clip.transitionIn.type !== 'none') {
             const transWidth = clip.transitionIn.duration * this.zoom;
@@ -1974,7 +2163,7 @@ class StarlitTimelineApp {
             ctx.fillRect(x, y, Math.min(transWidth, width), height);
             
             ctx.fillStyle = '#FFFF00';
-            ctx.font = '10px sans-serif';
+            ctx.font = `${transFontSize}px sans-serif`;
             ctx.fillText('IN', x + 2, y + 12);
         }
         
@@ -1986,7 +2175,7 @@ class StarlitTimelineApp {
             ctx.fillRect(Math.max(startX, x), y, Math.min(transWidth, width), height);
             
             ctx.fillStyle = '#FFFF00';
-            ctx.font = '10px sans-serif';
+            ctx.font = `${transFontSize}px sans-serif`;
             ctx.fillText('OUT', x + width - 30, y + 12);
         }
     }
@@ -2304,6 +2493,7 @@ class StarlitTimelineApp {
         ctx.fillRect(0, 0, width, height);
         
         const scrollLeft = document.getElementById('timelineScroll').scrollLeft;
+        const rulerFontSize = this.isTabletDevice ? 9 : 10;
         
         // インアウトポイントの範囲を表示
         if (this.inPoint !== null && this.outPoint !== null) {
@@ -2321,7 +2511,7 @@ class StarlitTimelineApp {
             ctx.fillStyle = '#00FF00';
             ctx.fillRect(inX - 2, 0, 4, height);
             ctx.fillStyle = '#5D3A1A';
-            ctx.font = 'bold 10px sans-serif';
+            ctx.font = `bold ${rulerFontSize}px sans-serif`;
             ctx.fillText('IN', inX + 4, 10);
         }
         
@@ -2331,12 +2521,12 @@ class StarlitTimelineApp {
             ctx.fillStyle = '#FF0000';
             ctx.fillRect(outX - 2, 0, 4, height);
             ctx.fillStyle = '#5D3A1A';
-            ctx.font = 'bold 10px sans-serif';
+            ctx.font = `bold ${rulerFontSize}px sans-serif`;
             ctx.fillText('OUT', outX + 4, 10);
         }
         
         ctx.fillStyle = '#5D3A1A';
-        ctx.font = '10px sans-serif';
+        ctx.font = `${rulerFontSize}px sans-serif`;
         
         const startTime = Math.floor(scrollLeft / this.zoom);
         const endTime = Math.ceil((scrollLeft + width) / this.zoom);

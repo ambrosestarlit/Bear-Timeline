@@ -1450,70 +1450,300 @@ input[type="checkbox"] {
    タブレット・タッチ操作対応
 ======================================== */
 
-/* タッチデバイスでのタップターゲット拡大 */
-@media (pointer: coarse) {
+/* 10.9インチタブレット向け基本調整 */
+@media (max-width: 1400px) {
+    :root {
+        font-size: 14px;
+    }
+    
     .menu-item {
-        padding: 16px 24px;
-        min-height: 48px;
+        padding: 10px 14px;
+        font-size: 14px;
     }
     
     .submenu-item {
-        padding: 14px 20px;
+        padding: 12px 16px;
+        font-size: 13px;
+    }
+    
+    .submenu {
+        min-width: 180px;
+    }
+    
+    .left-sidebar {
+        width: 220px;
+    }
+    
+    .right-sidebar {
+        width: 240px;
+    }
+    
+    .sidebar-header h3 {
+        font-size: 14px;
+    }
+    
+    .filter-button {
+        padding: 8px 6px;
+        font-size: 11px;
+    }
+    
+    .asset-name {
+        font-size: 10px;
+    }
+    
+    .asset-type {
+        font-size: 9px;
+    }
+    
+    .asset-thumbnail {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+    }
+    
+    .track-panel {
+        flex: 0 0 100px;
+    }
+    
+    .track-panel-spacer {
+        flex: 0 0 100px;
+    }
+    
+    .track-item {
+        height: 70px;
+    }
+    
+    .track-number {
+        font-size: 12px;
+    }
+    
+    .track-name-input {
+        font-size: 10px;
+        padding: 3px 4px;
+    }
+    
+    .timeline-title {
+        font-size: 14px;
+    }
+    
+    .timeline-controls {
+        padding: 8px;
+        gap: 8px;
+        font-size: 12px;
+    }
+    
+    .export-range-controls {
+        font-size: 12px;
+        gap: 6px;
+    }
+    
+    .time-input {
+        width: 60px;
+        padding: 4px;
+        font-size: 12px;
+    }
+    
+    .fps-select {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+    
+    .round-button {
+        padding: 8px 14px;
+        font-size: 13px;
+    }
+    
+    .round-button.small {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+    
+    .small-button {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+    
+    .property-label {
+        font-size: 11px;
+    }
+    
+    .property-value, .property-input, .value-input {
+        font-size: 11px;
+    }
+    
+    .styled-slider {
+        width: 150px;
+        height: 30px;
+    }
+    
+    #zoomValue {
+        font-size: 12px;
+        min-width: 90px;
+    }
+    
+    .track-count {
+        font-size: 14px;
+    }
+    
+    .time-display {
+        font-size: 14px;
+    }
+    
+    .resolution-display {
+        font-size: 10px;
+    }
+    
+    .button-icon {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+/* タッチデバイスでのタップターゲット拡大 */
+@media (pointer: coarse) {
+    .menu-item {
+        padding: 14px 18px;
         min-height: 44px;
+    }
+    
+    .submenu-item {
+        padding: 12px 18px;
+        min-height: 40px;
     }
     
     .toolbar button, .small-button {
-        min-width: 44px;
-        min-height: 44px;
-        padding: 10px 14px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 8px 12px;
     }
     
     .property-slider {
-        height: 32px;
+        height: 28px;
     }
     
     input[type="range"] {
-        height: 32px;
+        height: 28px;
     }
     
     input[type="range"]::-webkit-slider-thumb {
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
     }
     
     input[type="range"]::-moz-range-thumb {
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
     }
     
     select, input[type="text"], input[type="number"] {
-        min-height: 44px;
+        min-height: 40px;
         font-size: 16px; /* iOSのズーム防止 */
     }
     
     .asset-item {
-        padding: 12px;
-        min-height: 48px;
+        padding: 10px;
+        min-height: 44px;
     }
     
     .track-header {
-        min-height: 60px;
+        min-height: 50px;
     }
     
     /* プロパティパネルの調整 */
     .property-label {
-        font-size: 14px;
-        padding: 8px 0;
+        font-size: 12px;
+        padding: 6px 0;
     }
     
     .property-group {
-        padding: 10px 0;
+        padding: 8px 0;
     }
     
     /* タブボタンの拡大 */
     .tab-button, .clip-effects-window button {
-        min-height: 44px;
-        padding: 12px 16px;
+        min-height: 40px;
+        padding: 10px 14px;
+    }
+    
+    /* フィルターボタン */
+    .filter-button {
+        min-height: 36px;
+        padding: 8px 8px;
+    }
+}
+
+/* 10.9インチAndroidタブレット（横向き）専用 */
+@media (min-width: 800px) and (max-width: 1280px) and (orientation: landscape) {
+    .left-sidebar {
+        width: 200px;
+    }
+    
+    .right-sidebar {
+        width: 220px;
+    }
+    
+    .track-panel {
+        flex: 0 0 90px;
+    }
+    
+    .track-panel-spacer {
+        flex: 0 0 90px;
+    }
+    
+    .track-item {
+        height: 65px;
+        padding: 6px;
+    }
+    
+    .asset-item {
+        padding: 8px;
+        gap: 6px;
+    }
+    
+    .asset-thumbnail {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+    }
+    
+    .filter-button {
+        font-size: 10px;
+        padding: 6px 4px;
+    }
+    
+    .menu-item {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+    
+    .submenu {
+        min-width: 160px;
+    }
+    
+    .submenu-item {
+        padding: 10px 14px;
+        font-size: 12px;
+    }
+    
+    .preview-controls {
+        padding: 6px 14px;
+        gap: 14px;
+    }
+    
+    .time-display {
+        font-size: 13px;
+    }
+    
+    .timeline-header {
+        padding: 8px;
+    }
+    
+    .timeline-title {
+        font-size: 13px;
+    }
+    
+    .scene-breadcrumb {
+        font-size: 11px;
     }
 }
 
@@ -1530,6 +1760,14 @@ input[type="checkbox"] {
 #timelineScroll {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+}
+
+/* ドラッグ中のゴースト要素 */
+#assetDragGhost {
+    background: var(--chocolate-main);
+    border: 2px solid var(--accent-orange);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* PWAインストールボタン */
@@ -1552,10 +1790,15 @@ input[type="checkbox"] {
         transform: scale(0.95);
         transition: transform 0.1s;
     }
+    
+    /* タッチドラッグ中の素材アイテム */
+    .asset-item {
+        touch-action: none;
+    }
 }
 
 /* 横向き推奨表示（縦向きの小さい画面用） */
-@media (max-width: 768px) and (orientation: portrait) {
+@media (max-width: 900px) and (orientation: portrait) {
     body::before {
         content: '📱 横向きでの使用を推奨します';
         position: fixed;
@@ -1565,9 +1808,38 @@ input[type="checkbox"] {
         background: rgba(107, 68, 35, 0.95);
         color: var(--biscuit-light);
         text-align: center;
-        padding: 12px;
+        padding: 10px;
         z-index: 10001;
-        font-size: 14px;
+        font-size: 12px;
+    }
+}
+
+/* 縦向きタブレット（非推奨だが対応） */
+@media (max-width: 900px) and (orientation: portrait) {
+    .left-sidebar {
+        width: 180px;
+    }
+    
+    .right-sidebar {
+        width: 180px;
+    }
+    
+    .track-panel {
+        flex: 0 0 80px;
+    }
+    
+    .track-panel-spacer {
+        flex: 0 0 80px;
+    }
+    
+    .menu-item {
+        padding: 10px 10px;
+        font-size: 12px;
+    }
+    
+    .filter-button {
+        font-size: 9px;
+        padding: 6px 4px;
     }
 }
 
@@ -1576,4 +1848,213 @@ input[type="checkbox"] {
     body {
         background: var(--bg-dark);
     }
+}
+
+/* タブレットモードクラス（JSから追加） */
+body.tablet-mode {
+    font-size: 13px;
+}
+
+body.tablet-mode .track-panel {
+    flex: 0 0 90px;
+}
+
+body.tablet-mode .track-panel-spacer {
+    flex: 0 0 90px;
+}
+
+body.tablet-mode .track-item {
+    height: 65px;
+    padding: 5px;
+}
+
+body.tablet-mode .track-number {
+    font-size: 11px;
+}
+
+body.tablet-mode .track-name-input {
+    font-size: 9px;
+    padding: 2px 4px;
+}
+
+body.tablet-mode .left-sidebar {
+    width: 200px;
+}
+
+body.tablet-mode .right-sidebar {
+    width: 220px;
+}
+
+body.tablet-mode .sidebar-header h3 {
+    font-size: 13px;
+}
+
+body.tablet-mode .asset-item {
+    padding: 8px;
+    gap: 6px;
+}
+
+body.tablet-mode .asset-thumbnail {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+}
+
+body.tablet-mode .asset-name {
+    font-size: 10px;
+}
+
+body.tablet-mode .asset-type {
+    font-size: 8px;
+}
+
+body.tablet-mode .filter-button {
+    padding: 6px 5px;
+    font-size: 10px;
+}
+
+body.tablet-mode .menu-item {
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+body.tablet-mode .submenu {
+    min-width: 160px;
+}
+
+body.tablet-mode .submenu-item {
+    padding: 10px 14px;
+    font-size: 12px;
+}
+
+body.tablet-mode .timeline-title {
+    font-size: 12px;
+}
+
+body.tablet-mode .timeline-controls {
+    padding: 6px;
+    gap: 4px;
+    font-size: 10px;
+    flex-wrap: nowrap;
+}
+
+body.tablet-mode .export-range-controls {
+    font-size: 10px;
+    gap: 3px;
+    flex-wrap: nowrap;
+}
+
+body.tablet-mode .time-input {
+    width: 45px;
+    padding: 3px;
+    font-size: 10px;
+}
+
+body.tablet-mode .fps-select {
+    padding: 3px 5px;
+    font-size: 10px;
+}
+
+body.tablet-mode .styled-slider {
+    width: 100px;
+}
+
+body.tablet-mode #zoomValue {
+    font-size: 10px;
+    min-width: 65px;
+}
+
+body.tablet-mode .track-count {
+    font-size: 12px;
+    min-width: 20px;
+}
+
+body.tablet-mode .time-display {
+    font-size: 12px;
+}
+
+body.tablet-mode .resolution-display {
+    font-size: 8px;
+}
+
+body.tablet-mode .preview-controls {
+    padding: 5px 10px;
+    gap: 10px;
+}
+
+body.tablet-mode .round-button {
+    padding: 5px 10px;
+    font-size: 11px;
+}
+
+body.tablet-mode .round-button.small {
+    padding: 4px 7px;
+    font-size: 10px;
+}
+
+body.tablet-mode .small-button {
+    padding: 4px 6px;
+    font-size: 9px;
+}
+
+body.tablet-mode .property-label {
+    font-size: 10px;
+}
+
+body.tablet-mode .property-value,
+body.tablet-mode .property-input,
+body.tablet-mode .value-input {
+    font-size: 10px;
+}
+
+body.tablet-mode .button-icon {
+    width: 28px;
+    height: 28px;
+}
+
+body.tablet-mode .scene-breadcrumb {
+    font-size: 9px;
+}
+
+/* タイムラインヘッダー・コントロールのラベル */
+body.tablet-mode .timeline-header label,
+body.tablet-mode .timeline-controls label,
+body.tablet-mode .export-range-controls label,
+body.tablet-mode .export-range-controls span,
+body.tablet-mode .timeline-controls span,
+body.tablet-mode .preview-zoom-control label {
+    font-size: 9px !important;
+    white-space: nowrap;
+}
+
+body.tablet-mode .checkbox-label {
+    font-size: 9px;
+    gap: 2px;
+}
+
+body.tablet-mode .checkbox-label span {
+    font-size: 9px !important;
+}
+
+body.tablet-mode .control-separator {
+    margin: 0 4px;
+    height: 16px;
+}
+
+body.tablet-mode .timeline-header {
+    padding: 5px 6px;
+    flex-wrap: nowrap;
+}
+
+body.tablet-mode .preview-zoom-control {
+    margin-right: 8px !important;
+    gap: 4px;
+}
+
+body.tablet-mode .preview-zoom-control input[type="range"] {
+    width: 60px !important;
+}
+
+body.tablet-mode .icon-button {
+    padding: 4px;
 }
