@@ -2058,3 +2058,15 @@ body.tablet-mode .preview-zoom-control input[type="range"] {
 body.tablet-mode .icon-button {
     padding: 4px;
 }
+
+/* 静止画保存ボタンのタッチ対応 */
+.screenshot-button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+}
+
+.preview-controls .small-button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}

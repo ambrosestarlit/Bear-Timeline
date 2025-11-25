@@ -127,7 +127,7 @@
                     </div>
                     <div class="preview-controls">
                         <div class="time-display" id="timeDisplay">00:00:00.000</div>
-                        <button class="small-button" onclick="app.exportCurrentFramePNG()" title="現在のフレームをPNG保存" style="margin-left: 10px; padding: 6px 12px;">📷 静止画保存</button>
+                        <button class="small-button screenshot-button" onclick="app.exportCurrentFramePNG()" ontouchend="event.preventDefault(); app.exportCurrentFramePNG();" title="現在のフレームをPNG保存" style="margin-left: 10px; padding: 6px 12px;">📷 静止画保存</button>
                         <div class="resolution-display">1920 x 1080</div>
                     </div>
                 </div>
