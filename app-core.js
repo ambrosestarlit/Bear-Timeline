@@ -23,13 +23,16 @@ class StarlitTimelineApp {
         // updatePreview実行中フラグ（重複実行防止）
         this.isUpdatingPreview = false;
         
+        // 書き出しモードフラグ（チェッカーボードを描画しない）
+        this.isExporting = false;
+        
         // updatePreviewデバウンス用タイマー（ドラッグ時のパフォーマンス向上）
         this.previewUpdateTimer = null;
         this.previewUpdateDelay = 4; // 4ms (約240FPS相当) - より滑らかなドラッグ操作
         
         // キャンバス
         this.previewCanvas = document.getElementById('previewCanvas');
-        this.previewCtx = this.previewCanvas.getContext('2d');
+        this.previewCtx = this.previewCanvas.getContext('2d', { alpha: true });
         this.overlayCanvas = document.getElementById('overlayCanvas'); // SVG要素
         this.boundingBoxGroup = document.getElementById('boundingBoxGroup');
         this.timelineCanvas = document.getElementById('timelineCanvas');
@@ -1874,15 +1877,34 @@ class StarlitTimelineApp {
             this.loadAssetDimensions(clip);
         }
         
-        // 動画の場合、実際の長さを取得
+        // 動画の場合、実際の長さを取得し、videoElementをプリロード
         if (asset.type === 'video') {
-            const video = document.createElement('video');
-            video.onloadedmetadata = () => {
-                clip.duration = video.duration;
-                clip.originalDuration = video.duration;
+            // videoElementを事前に作成してプリロード
+            clip.videoElement = document.createElement('video');
+            clip.videoElement.muted = true;
+            clip.videoElement.preload = 'auto';
+            clip.videoElement.crossOrigin = 'anonymous';
+            clip.videoElement.setAttribute('playsinline', 'true');
+            clip.videoElement._isSeeking = false;
+            clip.videoElement._isLoaded = false;
+            clip.videoElement._loadStarted = true;
+            
+            clip.videoElement.onloadedmetadata = () => {
+                clip.duration = clip.videoElement.duration;
+                clip.originalDuration = clip.videoElement.duration;
+                clip.originalWidth = clip.videoElement.videoWidth;
+                clip.originalHeight = clip.videoElement.videoHeight;
                 this.drawTimeline();
             };
-            video.src = asset.url;
+            
+            clip.videoElement.oncanplay = () => {
+                clip.videoElement._isLoaded = true;
+                // ロード完了後にプレビューを更新
+                this.updatePreview();
+            };
+            
+            clip.videoElement.src = asset.url;
+            clip.videoElement.load(); // 明示的にロード開始
         }
         
         // 音声の場合、実際の長さを取得
@@ -1916,12 +1938,23 @@ class StarlitTimelineApp {
             };
             img.src = clip.asset.url;
         } else if (clip.asset.type === 'video') {
-            const video = document.createElement('video');
-            video.onloadedmetadata = () => {
-                clip.originalWidth = video.videoWidth;
-                clip.originalHeight = video.videoHeight;
-            };
-            video.src = clip.asset.url;
+            // addClip時にvideoElementを作成済みの場合は、それを使用
+            if (clip.videoElement) {
+                // 既にmetadataが読み込まれている場合
+                if (clip.videoElement.videoWidth > 0) {
+                    clip.originalWidth = clip.videoElement.videoWidth;
+                    clip.originalHeight = clip.videoElement.videoHeight;
+                }
+                // まだの場合はイベントで取得（addClip側で設定済み）
+            } else {
+                // videoElementがない場合は新規作成
+                const video = document.createElement('video');
+                video.onloadedmetadata = () => {
+                    clip.originalWidth = video.videoWidth;
+                    clip.originalHeight = video.videoHeight;
+                };
+                video.src = clip.asset.url;
+            }
         }
     }
     
@@ -3981,9 +4014,13 @@ class StarlitTimelineApp {
             const width = this.previewCanvas.width;
             const height = this.previewCanvas.height;
             
-            // 背景クリア
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, width, height);
+            // 背景クリア（透明にする）
+            ctx.clearRect(0, 0, width, height);
+            
+            // 透過チェッカーボードを描画（透過を可視化）- 書き出し時は描画しない
+            if (!this.isExporting) {
+                this.drawCheckerboard(ctx, width, height);
+            }
             
             // アクティブなクリップを描画（トラック番号が小さいほど手前に描画）
             const activeClips = this.clips.filter(clip => 
@@ -4031,6 +4068,21 @@ class StarlitTimelineApp {
         } finally {
             // 必ずフラグをリセット
             this.isUpdatingPreview = false;
+        }
+    }
+    
+    // 透過チェッカーボードを描画
+    drawCheckerboard(ctx, width, height) {
+        const size = 16; // チェッカーボードのマス目サイズ
+        const lightColor = '#CCCCCC';
+        const darkColor = '#999999';
+        
+        for (let y = 0; y < height; y += size) {
+            for (let x = 0; x < width; x += size) {
+                const isLight = ((x / size) + (y / size)) % 2 === 0;
+                ctx.fillStyle = isLight ? lightColor : darkColor;
+                ctx.fillRect(x, y, size, size);
+            }
         }
     }
     
@@ -4240,7 +4292,7 @@ class StarlitTimelineApp {
             tempCanvas = document.createElement('canvas');
             tempCanvas.width = this.previewCanvas.width;
             tempCanvas.height = this.previewCanvas.height;
-            targetCtx = tempCanvas.getContext('2d');
+            targetCtx = tempCanvas.getContext('2d', { alpha: true });
         }
         
         targetCtx.save();
@@ -4667,7 +4719,7 @@ class StarlitTimelineApp {
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = width;
             tempCanvas.height = height;
-            const tempCtx = tempCanvas.getContext('2d');
+            const tempCtx = tempCanvas.getContext('2d', { alpha: true });
             
             // 描画済みの画像を一時キャンバスにコピー
             tempCtx.drawImage(ctx.canvas, 
@@ -4688,7 +4740,7 @@ class StarlitTimelineApp {
             const tempCanvas2 = document.createElement('canvas');
             tempCanvas2.width = width;
             tempCanvas2.height = height;
-            const tempCtx2 = tempCanvas2.getContext('2d');
+            const tempCtx2 = tempCanvas2.getContext('2d', { alpha: true });
             tempCtx2.filter = tempCtx.filter;
             tempCtx2.drawImage(tempCanvas, 0, 0);
             
@@ -4831,21 +4883,44 @@ class StarlitTimelineApp {
             
             if (!clip.videoElement) {
                 clip.videoElement = document.createElement('video');
-                clip.videoElement.src = clip.asset.url;
                 clip.videoElement.muted = true;
                 clip.videoElement.preload = 'auto';
                 clip.videoElement.crossOrigin = 'anonymous'; // CORS対応
                 
-                // MOVファイルなど、ブラウザがネイティブサポートしていないコーデックのための追加設定
-                // ※ブラウザによっては H.264/AAC の MOV をサポート
+                // MOV/WebMなど、様々な動画形式のための追加設定
                 clip.videoElement.setAttribute('playsinline', 'true');
                 
-                // シーク中フラグを初期化
+                // シーク中フラグ・ロード完了フラグを初期化
                 clip.videoElement._isSeeking = false;
+                clip.videoElement._isLoaded = false;
+                clip.videoElement._loadStarted = false;
+                
+                let resolved = false;
+                const safeResolve = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        resolve();
+                    }
+                };
+                
+                // ロード完了イベント（canplay: 再生可能になった時点）
+                clip.videoElement.oncanplay = () => {
+                    if (!clip.videoElement._isLoaded) {
+                        clip.videoElement._isLoaded = true;
+                        // ロード完了時にシーク
+                        if (clip.videoElement.readyState >= 2) {
+                            clip.videoElement.currentTime = actualTime;
+                            clip.videoElement._isSeeking = true;
+                        }
+                    }
+                };
                 
                 clip.videoElement.onloadeddata = () => {
-                    clip.videoElement.currentTime = actualTime;
-                    clip.videoElement._isSeeking = true;
+                    if (!clip.videoElement._isLoaded) {
+                        clip.videoElement._isLoaded = true;
+                        clip.videoElement.currentTime = actualTime;
+                        clip.videoElement._isSeeking = true;
+                    }
                 };
                 
                 // シーク完了時に描画
@@ -4854,19 +4929,74 @@ class StarlitTimelineApp {
                     if (clip.videoElement.readyState >= 2) {
                         this.drawVideoOnCanvas(clip);
                     }
-                    resolve();
+                    safeResolve();
                 };
                 
-                // エラーハンドリング追加（MOVが読み込めない場合のログ）
+                // エラーハンドリング追加
                 clip.videoElement.onerror = (e) => {
                     console.error('動画読み込みエラー:', clip.asset.name, e);
-                    console.warn('MOVファイルはブラウザのコーデックサポートに依存します。H.264/AAC形式のMOVを推奨します。');
-                    resolve();
+                    console.warn('動画形式がブラウザでサポートされていない可能性があります。');
+                    safeResolve();
                 };
                 
-                // タイムアウト処理
-                setTimeout(() => resolve(), 100);
+                // srcを設定してロード開始
+                clip.videoElement.src = clip.asset.url;
+                clip.videoElement._loadStarted = true;
+                
+                // 明示的にload()を呼び出し（WebM等の互換性向上）
+                clip.videoElement.load();
+                
+                // タイムアウト処理（長めに設定：500ms）
+                setTimeout(() => {
+                    // タイムアウト時でもreadyStateが十分なら描画
+                    if (clip.videoElement && clip.videoElement.readyState >= 2) {
+                        this.drawVideoOnCanvas(clip);
+                    }
+                    safeResolve();
+                }, 500);
             } else {
+                // videoElementが存在するが、まだロード中の場合はロード完了を待つ
+                if (clip.videoElement.readyState < 2 && !clip.videoElement._isLoaded) {
+                    let resolved = false;
+                    const safeResolve = () => {
+                        if (!resolved) {
+                            resolved = true;
+                            resolve();
+                        }
+                    };
+                    
+                    const onCanPlay = () => {
+                        clip.videoElement._isLoaded = true;
+                        clip.videoElement.removeEventListener('canplay', onCanPlay);
+                        clip.videoElement.currentTime = actualTime;
+                        clip.videoElement._isSeeking = true;
+                    };
+                    
+                    const onSeeked = () => {
+                        clip.videoElement._isSeeking = false;
+                        clip.videoElement.removeEventListener('seeked', onSeeked);
+                        if (clip.videoElement.readyState >= 2) {
+                            this.drawVideoOnCanvas(clip);
+                        }
+                        safeResolve();
+                    };
+                    
+                    clip.videoElement.addEventListener('canplay', onCanPlay);
+                    clip.videoElement.addEventListener('seeked', onSeeked);
+                    
+                    // タイムアウト
+                    setTimeout(() => {
+                        clip.videoElement.removeEventListener('canplay', onCanPlay);
+                        clip.videoElement.removeEventListener('seeked', onSeeked);
+                        if (clip.videoElement.readyState >= 2) {
+                            this.drawVideoOnCanvas(clip);
+                        }
+                        safeResolve();
+                    }, 500);
+                    
+                    return;
+                }
+                
                 // currentTimeを更新（閾値を1フレーム分 = 約0.033秒 に設定）
                 const timeDiff = Math.abs(clip.videoElement.currentTime - actualTime);
                 const frameTime = 1.0 / this.fps; // FPSに基づいた1フレームの時間
@@ -6692,6 +6822,33 @@ class StarlitTimelineApp {
                 this.prepareAudioClip(clip);
             }
             
+            // 動画素材の場合、videoElementをプリロード
+            if (asset.type === 'video') {
+                clip.videoElement = document.createElement('video');
+                clip.videoElement.muted = true;
+                clip.videoElement.preload = 'auto';
+                clip.videoElement.crossOrigin = 'anonymous';
+                clip.videoElement.setAttribute('playsinline', 'true');
+                clip.videoElement._isSeeking = false;
+                clip.videoElement._isLoaded = false;
+                clip.videoElement._loadStarted = true;
+                
+                clip.videoElement.onloadedmetadata = () => {
+                    clip.originalWidth = clip.videoElement.videoWidth;
+                    clip.originalHeight = clip.videoElement.videoHeight;
+                    // duration/originalDurationはclipDataから復元済みなので更新しない
+                };
+                
+                clip.videoElement.oncanplay = () => {
+                    clip.videoElement._isLoaded = true;
+                    // ロード完了後にプレビューを更新
+                    this.updatePreview();
+                };
+                
+                clip.videoElement.src = asset.url;
+                clip.videoElement.load();
+            }
+            
             this.clips.push(clip);
             console.log(`✅ クリップを復元: ${clip.asset.name}, asset.url: ${clip.asset.url}`);
         }
@@ -7823,6 +7980,9 @@ class StarlitTimelineApp {
         
         const originalTime = this.currentTime;
         
+        // 書き出しモードを有効化（チェッカーボード非表示）
+        this.isExporting = true;
+        
         try {
             // FFmpegを初期化
             updateProgress('FFmpegを読み込み中...', '初回のみ時間がかかります');
@@ -7896,6 +8056,9 @@ class StarlitTimelineApp {
             // 進捗表示を削除
             document.body.removeChild(progressDiv);
             
+            // 書き出しモードを解除
+            this.isExporting = false;
+            
             // 元の時間に戻す
             this.currentTime = originalTime;
             this.updatePreview();
@@ -7905,6 +8068,7 @@ class StarlitTimelineApp {
             
         } catch (error) {
             console.error('Export error:', error);
+            this.isExporting = false;
             if (progressDiv.parentNode) {
                 document.body.removeChild(progressDiv);
             }
@@ -8036,6 +8200,9 @@ class StarlitTimelineApp {
             recorder.onstop = async () => {
                 updateProgress('ファイルを生成中...');
                 
+                // 書き出しモードを解除
+                this.isExporting = false;
+                
                 const blob = new Blob(chunks, { type: mimeType });
                 const url = URL.createObjectURL(blob);
                 
@@ -8061,6 +8228,7 @@ class StarlitTimelineApp {
             
             recorder.onerror = (e) => {
                 console.error('Recording error:', e);
+                this.isExporting = false;
                 document.body.removeChild(progressDiv);
                 alert('❌ 書き出し中にエラーが発生しました');
             };
@@ -8068,6 +8236,9 @@ class StarlitTimelineApp {
             // 録画開始
             recorder.start();
             updateProgress('録画開始...');
+            
+            // 書き出しモードを有効化（チェッカーボード非表示）
+            this.isExporting = true;
             
             const originalTime = this.currentTime;
             const originalSelectedClip = this.selectedClip; // 選択状態を保存
@@ -8107,6 +8278,7 @@ class StarlitTimelineApp {
             
         } catch (error) {
             console.error('Export error:', error);
+            this.isExporting = false;
             if (progressDiv.parentNode) {
                 document.body.removeChild(progressDiv);
             }
@@ -8119,10 +8291,16 @@ class StarlitTimelineApp {
         // 選択状態を一時的に解除してバウンディングボックスを非表示
         const originalSelectedClip = this.selectedClip;
         this.selectedClip = null;
+        
+        // 書き出しモードを有効化（チェッカーボード非表示）
+        this.isExporting = true;
         this.updatePreview();
         
         // キャンバスからPNGを生成
         const dataURL = this.previewCanvas.toDataURL('image/png');
+        
+        // 書き出しモードを解除
+        this.isExporting = false;
         
         // 時間をファイル名用にフォーマット
         const timeStr = this.formatTime(this.currentTime).replace(/:/g, '-').replace(/\./g, '_');
@@ -8193,6 +8371,9 @@ class StarlitTimelineApp {
         // 書き出し中は選択を解除してバウンディングボックスを非表示
         this.selectedClip = null;
         
+        // 書き出しモードを有効化（チェッカーボード非表示）
+        this.isExporting = true;
+        
         // JSZipライブラリを動的に読み込み
         if (typeof JSZip === 'undefined') {
             const script = document.createElement('script');
@@ -8229,6 +8410,9 @@ class StarlitTimelineApp {
             // UIの更新を待つ
             await new Promise(resolve => setTimeout(resolve, 10));
         }
+        
+        // 書き出しモードを解除
+        this.isExporting = false;
         
         // 元の状態に戻す
         this.currentTime = originalTime;
@@ -9704,14 +9888,60 @@ class StarlitTimelineApp {
     }
     
     // タブ切り替え可能なクリップエフェクトウィンドウを開く
-    openClipEffectWindow() {
+    // クリップエフェクトウィンドウを現在のタブを維持して再描画
+    refreshClipEffectWindow() {
         const windowId = 'clipEffectTabWindow';
+        const existingWindow = document.getElementById(windowId);
+        if (!existingWindow) return;
         
-        // 既存のウィンドウがあれば閉じる
+        // 現在のタブを記憶
+        const activeTab = existingWindow.querySelector('.effect-tab-button.active');
+        const currentTabId = activeTab ? activeTab.getAttribute('data-tab-id') : 'transition';
+        
+        // 現在の位置とサイズを保持
+        const currentLeft = existingWindow.style.left;
+        const currentTop = existingWindow.style.top;
+        const currentWidth = existingWindow.style.width;
+        const currentHeight = existingWindow.style.height;
+        
+        // ウィンドウを削除して再作成
+        existingWindow.remove();
+        this.openClipEffectWindow();
+        
+        // 新しいウィンドウの位置とサイズを復元
+        const newWindow = document.getElementById(windowId);
+        if (newWindow) {
+            if (currentLeft) newWindow.style.left = currentLeft;
+            if (currentTop) newWindow.style.top = currentTop;
+            if (currentWidth) newWindow.style.width = currentWidth;
+            if (currentHeight) newWindow.style.height = currentHeight;
+        }
+        
+        // タブを復元
+        setTimeout(() => {
+            const tabBtn = document.querySelector(`[data-tab-id="${currentTabId}"]`);
+            if (tabBtn) tabBtn.click();
+        }, 10);
+    }
+    
+    // クリップエフェクトウィンドウのトグル（ボタン用）
+    toggleClipEffectWindow() {
+        const windowId = 'clipEffectTabWindow';
         const existingWindow = document.getElementById(windowId);
         if (existingWindow) {
             existingWindow.remove();
             return;
+        }
+        this.openClipEffectWindow();
+    }
+    
+    openClipEffectWindow() {
+        const windowId = 'clipEffectTabWindow';
+        
+        // 既存のウィンドウがあれば削除（returnしない）
+        const existingWindow = document.getElementById(windowId);
+        if (existingWindow) {
+            existingWindow.remove();
         }
         
         if (!this.selectedClip) {
@@ -9790,6 +10020,7 @@ class StarlitTimelineApp {
         tabs.forEach((tab, index) => {
             const tabBtn = document.createElement('button');
             tabBtn.className = 'effect-tab-button';
+            tabBtn.setAttribute('data-tab-id', tab.id);
             if (index === 0) tabBtn.classList.add('active');
             tabBtn.textContent = tab.label;
             tabBtn.onclick = () => {
@@ -9885,14 +10116,64 @@ class StarlitTimelineApp {
     }
     
     // プロジェクトエフェクト編集ウィンドウを開く
-    openGlobalEffectWindow() {
+    // プロジェクトエフェクトウィンドウのトグル（ボタン用）
+    toggleGlobalEffectWindow() {
         const windowId = 'globalEffectWindow';
-        
-        // 既存のウィンドウがあれば閉じる
         const existingWindow = document.getElementById(windowId);
         if (existingWindow) {
             existingWindow.remove();
             return;
+        }
+        this.openGlobalEffectWindow();
+    }
+    
+    // プロジェクトエフェクトウィンドウを現在のタブを維持して再描画
+    refreshGlobalEffectWindow() {
+        const windowId = 'globalEffectWindow';
+        const existingWindow = document.getElementById(windowId);
+        if (!existingWindow) return;
+        
+        // 現在のタブを記憶
+        const activeTab = existingWindow.querySelector('.effect-tab-button.active');
+        const currentTabId = activeTab ? activeTab.textContent : 'レターボックス';
+        
+        // 現在の位置とサイズを保持
+        const currentLeft = existingWindow.style.left;
+        const currentTop = existingWindow.style.top;
+        const currentWidth = existingWindow.style.width;
+        const currentHeight = existingWindow.style.height;
+        
+        // ウィンドウを削除して再作成
+        existingWindow.remove();
+        this.openGlobalEffectWindow();
+        
+        // 新しいウィンドウの位置とサイズを復元
+        const newWindow = document.getElementById(windowId);
+        if (newWindow) {
+            if (currentLeft) newWindow.style.left = currentLeft;
+            if (currentTop) newWindow.style.top = currentTop;
+            if (currentWidth) newWindow.style.width = currentWidth;
+            if (currentHeight) newWindow.style.height = currentHeight;
+            
+            // タブを復元
+            setTimeout(() => {
+                const tabBtns = newWindow.querySelectorAll('.effect-tab-button');
+                tabBtns.forEach(btn => {
+                    if (btn.textContent === currentTabId) {
+                        btn.click();
+                    }
+                });
+            }, 10);
+        }
+    }
+    
+    openGlobalEffectWindow() {
+        const windowId = 'globalEffectWindow';
+        
+        // 既存のウィンドウがあれば削除（returnしない）
+        const existingWindow = document.getElementById(windowId);
+        if (existingWindow) {
+            existingWindow.remove();
         }
         
         // ウィンドウを作成
@@ -10022,7 +10303,7 @@ class StarlitTimelineApp {
         div.innerHTML = `
             <div class="property-group">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 16px;">
-                    <input type="checkbox" id="letterboxEnable" ${this.effects.letterbox.enabled ? 'checked' : ''} onchange="app.effects.letterbox.enabled = this.checked; app.updatePreview();">
+                    <input type="checkbox" id="letterboxEnable" ${this.effects.letterbox.enabled ? 'checked' : ''} onchange="app.effects.letterbox.enabled = this.checked; app.updatePreview(); app.refreshGlobalEffectWindow();">
                     <span style="font-weight: bold; font-size: 16px;">🎬 レターボックス有効化</span>
                 </label>
             </div>
@@ -10030,13 +10311,13 @@ class StarlitTimelineApp {
             ${this.effects.letterbox.enabled ? `
                 <div class="property-group">
                     <div class="property-label">太さ: <span id="letterboxHeightValue">${this.effects.letterbox.height}px</span></div>
-                    <input type="range" class="property-slider" min="0" max="200" value="${this.effects.letterbox.height}" 
+                    <input type="range" class="property-slider" id="letterboxHeight" min="0" max="200" value="${this.effects.letterbox.height}" 
                         oninput="document.getElementById('letterboxHeightValue').textContent = this.value + 'px'; app.effects.letterbox.height = parseInt(this.value); app.updatePreview();">
                 </div>
                 
                 <div class="property-group">
                     <div class="property-label">色:</div>
-                    <input type="color" value="${this.effects.letterbox.color}" 
+                    <input type="color" id="letterboxColor" value="${this.effects.letterbox.color}" 
                         onchange="app.effects.letterbox.color = this.value; app.updatePreview();" 
                         style="width: 100%; height: 50px; cursor: pointer; border-radius: 4px;">
                 </div>
@@ -10051,7 +10332,7 @@ class StarlitTimelineApp {
         div.innerHTML = `
             <div class="property-group">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 16px;">
-                    <input type="checkbox" id="gradientEnable" ${this.effects.gradient.enabled ? 'checked' : ''} onchange="app.effects.gradient.enabled = this.checked; app.updatePreview();">
+                    <input type="checkbox" id="gradientEnable" ${this.effects.gradient.enabled ? 'checked' : ''} onchange="app.effects.gradient.enabled = this.checked; app.updatePreview(); app.refreshGlobalEffectWindow();">
                     <span style="font-weight: bold; font-size: 16px;">🌈 グラデーション有効化</span>
                 </label>
             </div>
@@ -10137,7 +10418,7 @@ class StarlitTimelineApp {
         div.innerHTML = `
             <div class="property-group">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 16px;">
-                    <input type="checkbox" id="diffusionEnable" ${this.effects.diffusion.enabled ? 'checked' : ''} onchange="app.effects.diffusion.enabled = this.checked; app.updatePreview();">
+                    <input type="checkbox" id="diffusionEnable" ${this.effects.diffusion.enabled ? 'checked' : ''} onchange="app.effects.diffusion.enabled = this.checked; app.updatePreview(); app.refreshGlobalEffectWindow();">
                     <span style="font-weight: bold; font-size: 16px;">✨ ディフュージョン有効化</span>
                 </label>
             </div>
@@ -10149,33 +10430,33 @@ class StarlitTimelineApp {
                 
                 <div style="max-height: 700px; overflow-y: auto; padding-right: 8px;">
                     <div class="property-group">
-                        <div class="property-label">ブラー: <span id="diffusionBlurValue">${this.effects.diffusion.blur}</span></div>
+                        <div class="property-label">ブラー: <span id="globalDiffusionBlurValue">${this.effects.diffusion.blur}</span></div>
                         <input type="range" class="property-slider" min="0" max="300" value="${this.effects.diffusion.blur}" 
-                            oninput="document.getElementById('diffusionBlurValue').textContent = this.value; app.updateDiffusionEffect();">
+                            oninput="app.effects.diffusion.blur = parseFloat(this.value); document.getElementById('globalDiffusionBlurValue').textContent = this.value; app.saveSettingsToCache(); app.updatePreview();">
                     </div>
                     
                     <div class="property-group">
-                        <div class="property-label">コントラスト: <span id="diffusionContrastValue">${this.effects.diffusion.contrast}</span></div>
+                        <div class="property-label">コントラスト: <span id="globalDiffusionContrastValue">${this.effects.diffusion.contrast}</span></div>
                         <input type="range" class="property-slider" min="-100" max="100" value="${this.effects.diffusion.contrast}" 
-                            oninput="document.getElementById('diffusionContrastValue').textContent = this.value; app.updateDiffusionEffect();">
+                            oninput="app.effects.diffusion.contrast = parseFloat(this.value); document.getElementById('globalDiffusionContrastValue').textContent = this.value; app.saveSettingsToCache(); app.updatePreview();">
                     </div>
                     
                     <div class="property-group">
-                        <div class="property-label">明るさ: <span id="diffusionBrightnessValue">${this.effects.diffusion.brightness}</span></div>
+                        <div class="property-label">明るさ: <span id="globalDiffusionBrightnessValue">${this.effects.diffusion.brightness}</span></div>
                         <input type="range" class="property-slider" min="-100" max="100" value="${this.effects.diffusion.brightness}" 
-                            oninput="document.getElementById('diffusionBrightnessValue').textContent = this.value; app.updateDiffusionEffect();">
+                            oninput="app.effects.diffusion.brightness = parseFloat(this.value); document.getElementById('globalDiffusionBrightnessValue').textContent = this.value; app.saveSettingsToCache(); app.updatePreview();">
                     </div>
                     
                     <div class="property-group">
-                        <div class="property-label">彩度: <span id="diffusionSaturationValue">${this.effects.diffusion.saturation}</span></div>
+                        <div class="property-label">彩度: <span id="globalDiffusionSaturationValue">${this.effects.diffusion.saturation}</span></div>
                         <input type="range" class="property-slider" min="-100" max="100" value="${this.effects.diffusion.saturation}" 
-                            oninput="document.getElementById('diffusionSaturationValue').textContent = this.value; app.updateDiffusionEffect();">
+                            oninput="app.effects.diffusion.saturation = parseFloat(this.value); document.getElementById('globalDiffusionSaturationValue').textContent = this.value; app.saveSettingsToCache(); app.updatePreview();">
                     </div>
                     
                     <div class="property-group">
-                        <div class="property-label">不透明度: <span id="diffusionOpacityValue">${this.effects.diffusion.opacity}%</span></div>
+                        <div class="property-label">不透明度: <span id="globalDiffusionOpacityValue">${this.effects.diffusion.opacity}%</span></div>
                         <input type="range" class="property-slider" min="0" max="100" value="${this.effects.diffusion.opacity}" 
-                            oninput="document.getElementById('diffusionOpacityValue').textContent = this.value + '%'; app.updateDiffusionEffect();">
+                            oninput="app.effects.diffusion.opacity = parseFloat(this.value); document.getElementById('globalDiffusionOpacityValue').textContent = this.value + '%'; app.saveSettingsToCache(); app.updatePreview();">
                     </div>
                     
                     <div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 8px; margin-top: 16px;">
@@ -10485,10 +10766,10 @@ class StarlitTimelineApp {
                         <option value="">なし</option>
                     </select>
                     <div style="display: flex; gap: 8px;">
-                        <button class="small-button" onclick="app.clippingManager.setClipSource(); app.openClipEffectWindow();" style="flex: 1; padding: 8px; background: var(--accent-orange); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        <button class="small-button" onclick="app.clippingManager.setClipSource(); app.refreshClipEffectWindow();" style="flex: 1; padding: 8px; background: var(--accent-orange); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
                             ✂️ 設定
                         </button>
-                        <button class="small-button" onclick="app.clippingManager.removeClipSource(); app.openClipEffectWindow();" style="flex: 1; padding: 8px; background: var(--chocolate-dark); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        <button class="small-button" onclick="app.clippingManager.removeClipSource(); app.refreshClipEffectWindow();" style="flex: 1; padding: 8px; background: var(--chocolate-dark); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
                             ❌ 解除
                         </button>
                     </div>
@@ -10506,7 +10787,7 @@ class StarlitTimelineApp {
                 <div class="property-group">
                     <label class="checkbox-label" style="display: flex; align-items: center; margin-bottom: 12px; cursor: pointer;">
                         <input type="checkbox" ${clip.colorKey.enabled ? 'checked' : ''} 
-                            onchange="app.clippingManager.toggleColorKey(this.checked); app.openClipEffectWindow();">
+                            onchange="app.clippingManager.toggleColorKey(this.checked); app.refreshClipEffectWindow();">
                         <span style="margin-left: 8px; font-weight: bold;">色抜きを有効化</span>
                     </label>
                     
@@ -10534,7 +10815,7 @@ class StarlitTimelineApp {
                     
                     <label class="checkbox-label" style="display: flex; align-items: center; margin-bottom: 12px; cursor: pointer;">
                         <input type="checkbox" ${clip.colorKey.invertMask ? 'checked' : ''} 
-                            onchange="app.clippingManager.toggleColorKeyInvert(this.checked); app.openClipEffectWindow();">
+                            onchange="app.clippingManager.toggleColorKeyInvert(this.checked); app.refreshClipEffectWindow();">
                         <span style="margin-left: 8px;">選択色以外を表示</span>
                     </label>
                     
@@ -10587,7 +10868,7 @@ class StarlitTimelineApp {
                 <div class="property-group">
                     <label class="checkbox-label" style="display: flex; align-items: center; margin-bottom: 12px; cursor: pointer;">
                         <input type="checkbox" ${clip.colorClipping.enabled ? 'checked' : ''} 
-                            onchange="app.clippingManager.toggleColorClipping(this.checked); app.openClipEffectWindow();">
+                            onchange="app.clippingManager.toggleColorClipping(this.checked); app.refreshClipEffectWindow();">
                         <span style="margin-left: 8px; font-weight: bold;">色抜きクリッピングを有効化</span>
                     </label>
                     
@@ -10598,7 +10879,7 @@ class StarlitTimelineApp {
                         <select id="colorClippingReferenceSelect" class="property-slider" style="width: 100%; padding: 8px; margin-bottom: 8px; background: var(--chocolate-main); color: var(--biscuit-light); border: 1px solid var(--chocolate-dark); border-radius: 4px;">
                             <option value="">なし</option>
                         </select>
-                        <button class="small-button" onclick="app.clippingManager.setColorClippingReference(); app.openClipEffectWindow();" style="width: 100%; padding: 8px; background: var(--accent-orange); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; margin-bottom: 12px;">
+                        <button class="small-button" onclick="app.clippingManager.setColorClippingReference(); app.refreshClipEffectWindow();" style="width: 100%; padding: 8px; background: var(--accent-orange); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; margin-bottom: 12px;">
                             📌 参照クリップを設定
                         </button>
                     </div>
@@ -10869,19 +11150,8 @@ class StarlitTimelineApp {
         this.selectedClip.puppet.enabled = enabled;
         this.updatePreview();
         this.saveHistory();
-        // 現在のタブを記憶してウィンドウを再描画
-        const existingWindow = document.getElementById('clipEffectTabWindow');
-        if (existingWindow) {
-            const activeTab = existingWindow.querySelector('.effect-tab-button.active');
-            const currentTabId = activeTab ? activeTab.getAttribute('data-tab-id') : 'puppet';
-            existingWindow.remove();
-            this.openClipEffectWindow();
-            // タブを復元
-            setTimeout(() => {
-                const tabBtn = document.querySelector(`[data-tab-id="${currentTabId}"]`);
-                if (tabBtn) tabBtn.click();
-            }, 10);
-        }
+        // 現在のタブを維持してウィンドウを再描画
+        this.refreshClipEffectWindow();
     }
     
     toggleWindShake(enabled) {
@@ -10901,19 +11171,8 @@ class StarlitTimelineApp {
         this.selectedClip.windShake.enabled = enabled;
         this.updatePreview();
         this.saveHistory();
-        // 現在のタブを記憶してウィンドウを再描画
-        const existingWindow = document.getElementById('clipEffectTabWindow');
-        if (existingWindow) {
-            const activeTab = existingWindow.querySelector('.effect-tab-button.active');
-            const currentTabId = activeTab ? activeTab.getAttribute('data-tab-id') : 'windShake';
-            existingWindow.remove();
-            this.openClipEffectWindow();
-            // タブを復元
-            setTimeout(() => {
-                const tabBtn = document.querySelector(`[data-tab-id="${currentTabId}"]`);
-                if (tabBtn) tabBtn.click();
-            }, 10);
-        }
+        // 現在のタブを維持してウィンドウを再描画
+        this.refreshClipEffectWindow();
     }
     
     // クリップ用カラーキーの切り替え
@@ -10931,18 +11190,8 @@ class StarlitTimelineApp {
         this.selectedClip.colorKey.enabled = enabled;
         this.updatePreview();
         this.saveHistory();
-        // ウィンドウを再描画
-        const existingWindow = document.getElementById('clipEffectTabWindow');
-        if (existingWindow) {
-            existingWindow.remove();
-            this.openClipEffectWindow();
-            setTimeout(() => {
-                const buttons = document.querySelectorAll('.effect-tab-button');
-                buttons.forEach((btn, i) => {
-                    if (btn.textContent.includes('カラーキー')) btn.click();
-                });
-            }, 10);
-        }
+        // 現在のタブを維持してウィンドウを再描画
+        this.refreshClipEffectWindow();
     }
     
     // クリップ用カラーキーの更新
@@ -11107,19 +11356,8 @@ class StarlitTimelineApp {
         this.selectedClip.gaussianBlur.enabled = enabled;
         this.updatePreview();
         this.saveHistory();
-        // 現在のタブを記憶してウィンドウを再描画
-        const existingWindow = document.getElementById('clipEffectTabWindow');
-        if (existingWindow) {
-            const activeTab = existingWindow.querySelector('.effect-tab-button.active');
-            const currentTabId = activeTab ? activeTab.getAttribute('data-tab-id') : 'blur';
-            existingWindow.remove();
-            this.openClipEffectWindow();
-            // タブを復元
-            setTimeout(() => {
-                const tabBtn = document.querySelector(`[data-tab-id="${currentTabId}"]`);
-                if (tabBtn) tabBtn.click();
-            }, 10);
-        }
+        // 現在のタブを維持してウィンドウを再描画
+        this.refreshClipEffectWindow();
     }
     
     toggleLensBlur(enabled) {
@@ -11130,19 +11368,8 @@ class StarlitTimelineApp {
         this.selectedClip.lensBlur.enabled = enabled;
         this.updatePreview();
         this.saveHistory();
-        // 現在のタブを記憶してウィンドウを再描画
-        const existingWindow = document.getElementById('clipEffectTabWindow');
-        if (existingWindow) {
-            const activeTab = existingWindow.querySelector('.effect-tab-button.active');
-            const currentTabId = activeTab ? activeTab.getAttribute('data-tab-id') : 'blur';
-            existingWindow.remove();
-            this.openClipEffectWindow();
-            // タブを復元
-            setTimeout(() => {
-                const tabBtn = document.querySelector(`[data-tab-id="${currentTabId}"]`);
-                if (tabBtn) tabBtn.click();
-            }, 10);
-        }
+        // 現在のタブを維持してウィンドウを再描画
+        this.refreshClipEffectWindow();
     }
     
     // 個別のエフェクト詳細ウィンドウを開く

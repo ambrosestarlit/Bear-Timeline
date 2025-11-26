@@ -142,6 +142,23 @@ class ClippingManager {
     // スポイトツールを有効化
     activateEyedropper() {
         console.log('スポイトツール有効化');
+        
+        if (!this.app.selectedClip) {
+            console.log('選択クリップなし');
+            alert('クリップを選択してください');
+            return;
+        }
+        
+        // colorKeyプロパティが存在しない場合は初期化
+        if (!this.app.selectedClip.colorKey) {
+            this.app.selectedClip.colorKey = {
+                enabled: false,
+                color: { r: 0, g: 255, b: 0 },
+                tolerance: 30,
+                invertMask: false
+            };
+        }
+        
         this.eyedropperActive = true;
         const canvas = this.app.previewCanvas;
         const previewArea = document.getElementById('previewArea');
@@ -206,6 +223,16 @@ class ClippingManager {
         console.log('色を取得中...');
         if (!this.app.selectedClip) return;
         
+        // colorKeyプロパティが存在しない場合は初期化
+        if (!this.app.selectedClip.colorKey) {
+            this.app.selectedClip.colorKey = {
+                enabled: false,
+                color: { r: 0, g: 255, b: 0 },
+                tolerance: 30,
+                invertMask: false
+            };
+        }
+        
         const rect = this.app.previewCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -231,7 +258,8 @@ class ClippingManager {
             b: data[2]
         };
         
-        this.app.updatePropertiesPanel();
+        // エフェクトウィンドウを更新
+        this.app.refreshClipEffectWindow();
         this.app.updatePreview();
         this.app.saveHistory('色抜き色を選択');
     }
@@ -498,7 +526,8 @@ class ClippingManager {
             b: data[2]
         };
         
-        this.app.updatePropertiesPanel();
+        // エフェクトウィンドウを更新
+        this.app.refreshClipEffectWindow();
         this.app.updatePreview();
         this.app.saveHistory('色抜きクリッピング色を選択');
     }
