@@ -9259,9 +9259,15 @@ class StarlitTimelineApp {
         // 音声クリップがあるか確認
         const audioClips = this.clips.filter(c => c.asset && c.asset.type === 'audio');
         const hasAudioClips = audioClips.length > 0;
-        const audioInfo = (includeAudio && hasAudioClips) ? '音声あり（FFmpeg結合）' : '音声なし';
+        const audioInfo = (includeAudio && hasAudioClips) 
+            ? '音声あり（ZIPで書き出し → Starlit Video Mergerで結合）' 
+            : '音声なし';
         
-        if (!confirm(`WebM動画を書き出しますか?\n\n長さ: ${totalDuration.toFixed(2)}秒\nフレーム数: ${frames}\nFPS: ${this.fps}\n音声: ${audioInfo}${rangeInfo}\n\n※WebMは透過（アルファチャンネル）に対応しています`)) {
+        const confirmMessage = (includeAudio && hasAudioClips)
+            ? `WebM動画を書き出しますか?\n\n長さ: ${totalDuration.toFixed(2)}秒\nフレーム数: ${frames}\nFPS: ${this.fps}\n音声: ${audioInfo}${rangeInfo}\n\n📦 映像(WebM) + 音声(WAV) をZIPでダウンロードします\n💡 Starlit Video Merger で結合してください`
+            : `WebM動画を書き出しますか?\n\n長さ: ${totalDuration.toFixed(2)}秒\nフレーム数: ${frames}\nFPS: ${this.fps}\n音声: ${audioInfo}${rangeInfo}\n\n※WebMは透過（アルファチャンネル）に対応しています`;
+        
+        if (!confirm(confirmMessage)) {
             return;
         }
         
@@ -9315,16 +9321,53 @@ class StarlitTimelineApp {
             updateProgress('音声をレンダリング中...', '');
             const audioBlob = await this.renderAudioOnly(startTime, endTime, audioClips);
             
-            // ステップ3: FFmpegで結合
-            updateProgress('FFmpegを読み込み中...', '初回は少し時間がかかります');
-            const finalBlob = await this.mergeWithFFmpeg(videoBlob, audioBlob, updateProgress);
+            // ステップ3: ZIPにまとめてダウンロード
+            updateProgress('ZIPを作成中...', '');
+            const zip = new JSZip();
+            
+            // 映像と音声をZIPに追加
+            zip.file('video.webm', videoBlob);
+            zip.file('audio.wav', audioBlob);
+            
+            // README.txtを追加
+            const readmeText = `Starlit Timeline Caption Export
+================================
+
+このZIPには以下のファイルが含まれています：
+- video.webm : 映像（透過対応）
+- audio.wav  : 音声
+
+【結合方法】
+Starlit Video Merger を使用して結合してください。
+ZIPファイルをドラッグ＆ドロップするだけで
+映像と音声を結合できます。
+
+https://github.com/AmbroseStarlit/Starlit-Video-Merger
+
+【ffmpegで手動結合する場合】
+ffmpeg -i video.webm -i audio.wav -c:v copy -c:a libopus -b:a 128k -shortest output.webm
+
+書き出し情報:
+- 長さ: ${totalDuration.toFixed(2)}秒
+- フレーム数: ${frames}
+- FPS: ${this.fps}
+- 書き出し日時: ${new Date().toLocaleString('ja-JP')}
+`;
+            zip.file('README.txt', readmeText);
+            
+            // ZIPを生成
+            updateProgress('ZIPを圧縮中...', '');
+            const zipBlob = await zip.generateAsync({ 
+                type: 'blob',
+                compression: 'STORE' // 既に圧縮済みなので無圧縮で高速化
+            });
             
             // ダウンロード
             updateProgress('ダウンロード準備中...');
-            this.downloadBlob(finalBlob, `starlit_export_${Date.now()}.webm`);
+            this.downloadBlob(zipBlob, `starlit_export_${Date.now()}.zip`);
             
             document.body.removeChild(progressDiv);
-            alert('✅ WebM書き出しが完了しました!\n\n音声付きで保存されています。');
+            alert('✅ 書き出しが完了しました!\n\n📦 映像(WebM) + 音声(WAV) のZIPを保存しました\n\n💡 Starlit Video Merger でZIPを開いて結合してください');
             
         } catch (error) {
             console.error('Export error:', error);
@@ -9519,6 +9562,9 @@ class StarlitTimelineApp {
         return new Blob([buffer], { type: 'audio/wav' });
     }
     
+    /* === FFmpeg結合機能（ブラウザのセキュリティ制限により使用不可）===
+    // 代わりに Starlit Video Merger (WPF) を使用してください
+    
     // FFmpegで映像と音声を結合
     async mergeWithFFmpeg(videoBlob, audioBlob, updateProgress) {
         // FFmpeg.wasmを動的にロード（シングルスレッド版 - GitHub Pages対応）
@@ -9584,6 +9630,7 @@ class StarlitTimelineApp {
         
         return new Blob([data], { type: 'video/webm' });
     }
+    === FFmpeg結合機能ここまで === */
     
     // Blobをダウンロード
     downloadBlob(blob, filename) {
