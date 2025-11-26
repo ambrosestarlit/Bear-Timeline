@@ -51,6 +51,8 @@
             <div class="menu-item">
                 <span>オブジェクト</span>
                 <div class="submenu">
+                    <div class="submenu-item" onclick="app.createCaptionClip()">🎬 字幕クリップ</div>
+                    <div class="submenu-divider"></div>
                     <div class="submenu-item" onclick="app.createSolidColorClip()">🎨 ベタ塗りクリップ</div>
                     <div class="submenu-item" onclick="app.createGradientClip()">🌈 グラデーションクリップ</div>
                     <div class="submenu-item" onclick="app.createStripeClip()">📏 ストライプクリップ</div>
@@ -69,7 +71,11 @@
 
         <!-- ツールバー -->
         <div class="toolbar">
-            <div class="toolbar-separator"></div>
+            <div class="toolbar-center">
+                <div class="time-display" id="timeDisplay">00:00:00.000</div>
+                <button class="toolbar-button" onclick="app.exportCurrentFramePNG()" ontouchend="event.preventDefault(); app.exportCurrentFramePNG();" title="現在のフレームをPNG保存">📷 静止画保存</button>
+                <div class="resolution-display">1920 x 1080</div>
+            </div>
         </div>
 
         <div class="main-container">
@@ -124,11 +130,6 @@
                         <svg id="overlayCanvas" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet">
                             <g id="boundingBoxGroup"></g>
                         </svg>
-                    </div>
-                    <div class="preview-controls">
-                        <div class="time-display" id="timeDisplay">00:00:00.000</div>
-                        <button class="small-button screenshot-button" onclick="app.exportCurrentFramePNG()" ontouchend="event.preventDefault(); app.exportCurrentFramePNG();" title="現在のフレームをPNG保存" style="margin-left: 10px; padding: 6px 12px;">📷 静止画保存</button>
-                        <div class="resolution-display">1920 x 1080</div>
                     </div>
                 </div>
 

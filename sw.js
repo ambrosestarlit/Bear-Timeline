@@ -1,5 +1,5 @@
 // Starlit Timeline Editor Service Worker
-const CACHE_NAME = 'starlit-timeline-v2.5.22';
+const CACHE_NAME = 'starlit-timeline-v2.5.28';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -13,6 +13,7 @@ const ASSETS_TO_CACHE = [
     './modules/utils/storage.js',
     './modules/utils/math.js',
     './JK-Maru-Gothic-M.otf',
+    './cinecaption226.ttf',
     './play.png',
     './pause.png',
     './stop.png',

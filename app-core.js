@@ -1251,6 +1251,13 @@ class StarlitTimelineApp {
         this.updatePreview();
         this.drawTimeline();
         this.drawRuler();
+        // 字幕ポップアップの時間表示を更新
+        this.updateCaptionPopupText();
+    }
+    
+    // seekToメソッド（字幕キーフレームからの呼び出し用）
+    seekTo(time) {
+        this.seekToTime(time);
     }
     
     // ファイル管理
@@ -1335,6 +1342,46 @@ class StarlitTimelineApp {
             direction: '1', // 1:横, 2:縦, 3:斜め
             stripeType: '1', // 1:色+色, 2:色+透明
             element: this.createStripeCanvas('#FF6B9D', '#6B9DFF', 50, '1')
+        };
+        
+        this.assets.push(asset);
+        
+        // タイムラインに自動配置
+        this.addClipFromAsset(asset.id, this.currentTime, 0);
+        
+        // 追加したクリップを選択
+        const addedClip = this.clips[this.clips.length - 1];
+        this.selectedClip = addedClip;
+        this.updatePropertiesPanel();
+        this.drawTimeline();
+        this.updatePreview();
+    }
+    
+    // 字幕クリップを作成
+    createCaptionClip() {
+        const asset = {
+            id: Date.now() + Math.random(),
+            name: `字幕`,
+            type: 'caption',
+            // 字幕設定
+            captionSettings: {
+                text: 'ここに字幕を入力',
+                position: 'bottom',       // top, bottom, left-vertical, right-vertical
+                align: 'center',          // left, center, right
+                fontSize: 48,             // フォントサイズ
+                fontColor: '#FFFFFF',     // 文字色
+                strokeColor: '#000000',   // ふちどり色
+                strokeWidth: 4,           // ふちどり太さ
+                backgroundColor: 'transparent', // 背景色
+                backgroundOpacity: 0,     // 背景不透明度 (0-100)
+                backgroundPadding: 10,    // 背景パディング
+                marginX: 50,              // 左右マージン
+                marginY: 80,              // 上下マージン
+                lineHeight: 1.4,          // 行間
+                letterSpacing: 0,         // 字間
+                // キーフレーム対応の字幕テキスト
+                textKeyframes: []         // { time: number, text: string }
+            }
         };
         
         this.assets.push(asset);
@@ -2115,6 +2162,9 @@ class StarlitTimelineApp {
             ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#8B6914';
         } else if (clip.asset.type === 'sequence') {
             ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#6B5423';
+        } else if (clip.asset.type === 'caption') {
+            // 字幕クリップは紫系の色
+            ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#8B4B8B';
         } else {
             ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#6B4423';
         }
@@ -2155,7 +2205,8 @@ class StarlitTimelineApp {
             'image': '🖼️',
             'video': '🎬',
             'audio': '🎵',
-            'sequence': '📹'
+            'sequence': '📹',
+            'caption': '🎬'
         }[clip.asset.type] || '📄';
         
         ctx.fillStyle = '#F5DEB3';
@@ -2418,6 +2469,32 @@ class StarlitTimelineApp {
                 }
             });
         }
+        
+        // 字幕クリップのテキストキーフレーム
+        if (clip.asset.type === 'caption' && clip.asset.captionSettings && clip.asset.captionSettings.textKeyframes) {
+            const textKeyframes = clip.asset.captionSettings.textKeyframes;
+            textKeyframes.forEach(kf => {
+                const x = clipX + (kf.time * this.zoom);
+                const y = clipY + clipHeight - keyframeSize - 2 - yOffset;
+                
+                // くま画像が読み込まれていれば画像を描画
+                if (this.keyframeImage && this.keyframeImage.complete) {
+                    ctx.drawImage(
+                        this.keyframeImage,
+                        x - keyframeSize / 2,
+                        y,
+                        keyframeSize,
+                        keyframeSize
+                    );
+                } else {
+                    // フォールバック: オレンジ色の丸（字幕用）
+                    ctx.fillStyle = '#FFA500';
+                    ctx.beginPath();
+                    ctx.arc(x, y + keyframeSize / 2, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
     }
     
     drawPlayhead() {
@@ -2651,6 +2728,11 @@ class StarlitTimelineApp {
             this.drawTimeline();
             this.updatePreview(); // バウンディングボックスを更新
             
+            // 字幕クリップ以外を選択したらポップアップを閉じる
+            if (clickedClip.asset.type !== 'caption') {
+                this.closeCaptionInputPopup();
+            }
+            
             // ブラウザのドラッグ&ドロップを無効化
             e.preventDefault();
             return;
@@ -2686,6 +2768,8 @@ class StarlitTimelineApp {
         this.updatePreview();
         this.drawTimeline();
         this.updatePropertiesPanel();
+        // 字幕ポップアップの時間表示を更新
+        this.updateCaptionPopupText();
     }
     
     handleTimelineMouseMove(e) {
@@ -3042,6 +3126,187 @@ class StarlitTimelineApp {
             }
             
             propertiesHTML += `</div>`;
+        }
+        
+        // 字幕クリップの場合
+        if (clip.asset.type === 'caption') {
+            const settings = clip.asset.captionSettings || {};
+            const localTimeForCaption = this.currentTime - clip.startTime;
+            
+            // 現在時刻のテキストを取得
+            let currentText = settings.text || '';
+            if (settings.textKeyframes && settings.textKeyframes.length > 0) {
+                const sortedKeyframes = [...settings.textKeyframes].sort((a, b) => a.time - b.time);
+                for (const kf of sortedKeyframes) {
+                    if (kf.time <= localTimeForCaption) {
+                        currentText = kf.text;
+                    }
+                }
+            }
+            
+            propertiesHTML += `
+            <div style="margin: 16px 0; padding: 12px; background: rgba(210, 105, 30, 0.1); border-radius: 8px;">
+                <h3 style="margin: 0 0 12px 0; font-size: 16px; color: var(--biscuit-light);">🎬 字幕設定</h3>
+                
+                <!-- 字幕テキスト入力 -->
+                <div class="property-group">
+                    <div class="property-label" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>字幕テキスト</span>
+                        <button onclick="app.openCaptionInputPopup()" 
+                            style="padding: 4px 10px; background: var(--chocolate-main); color: var(--biscuit-light); 
+                                   border: 1px solid var(--chocolate-dark); border-radius: 4px; cursor: pointer; font-size: 12px;"
+                            title="大きな入力ウィンドウで編集">🔲 拡大入力</button>
+                    </div>
+                    <textarea id="captionTextInput" 
+                        style="width: 100%; height: 80px; padding: 8px; resize: vertical; 
+                               background: var(--chocolate-main); color: var(--biscuit-light); 
+                               border: 1px solid var(--chocolate-dark); border-radius: 4px;
+                               font-family: 'CineCaption', 'JK Maru Gothic', sans-serif;"
+                        oninput="app.updateCaptionSetting('text', this.value); const popup = document.getElementById('captionPopupTextarea'); if(popup) popup.value = this.value;"
+                    >${this.escapeHtml(currentText)}</textarea>
+                </div>
+                
+                <!-- キーフレーム追加ボタン -->
+                <div class="property-group">
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="app.addCaptionTextKeyframe()" 
+                            style="flex: 1; padding: 8px; background: var(--accent-orange); color: white; 
+                                   border: none; border-radius: 4px; cursor: pointer;">
+                            ⏱️ この時間にキーフレーム追加
+                        </button>
+                        <button onclick="app.clearCaptionTextKeyframes()" 
+                            style="padding: 8px 12px; background: #666; color: white; 
+                                   border: none; border-radius: 4px; cursor: pointer;"
+                            title="全キーフレームをクリア">🗑️</button>
+                    </div>
+                </div>
+                
+                <!-- キーフレーム一覧 -->
+                ${settings.textKeyframes && settings.textKeyframes.length > 0 ? `
+                <div class="property-group">
+                    <div class="property-label">テキストキーフレーム</div>
+                    <div style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        ${settings.textKeyframes.sort((a, b) => a.time - b.time).map((kf, idx) => `
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; 
+                                        padding: 4px; background: rgba(255,255,255,0.05); border-radius: 4px;
+                                        ${Math.abs(kf.time - localTimeForCaption) < 0.05 ? 'border: 1px solid var(--accent-orange);' : ''}">
+                                <span style="min-width: 60px; color: var(--accent-orange); cursor: pointer;" 
+                                      onclick="app.seekTo(${clip.startTime + kf.time})">${kf.time.toFixed(2)}s</span>
+                                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(kf.text.substring(0, 20))}${kf.text.length > 20 ? '...' : ''}</span>
+                                <button onclick="app.removeCaptionTextKeyframe(${idx})" 
+                                    style="padding: 2px 6px; background: #c44; color: white; border: none; border-radius: 2px; cursor: pointer;">✕</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- 位置設定 -->
+                <div class="property-group">
+                    <div class="property-label">📍 位置</div>
+                    <select onchange="app.updateCaptionSetting('position', this.value)" 
+                        style="width: 100%; padding: 8px; background: var(--chocolate-main); 
+                               color: var(--biscuit-light); border: 1px solid var(--chocolate-dark); border-radius: 4px;">
+                        <option value="bottom" ${settings.position === 'bottom' ? 'selected' : ''}>下部（横書き）</option>
+                        <option value="top" ${settings.position === 'top' ? 'selected' : ''}>上部（横書き）</option>
+                        <option value="right-vertical" ${settings.position === 'right-vertical' ? 'selected' : ''}>右サイド（縦書き）</option>
+                        <option value="left-vertical" ${settings.position === 'left-vertical' ? 'selected' : ''}>左サイド（縦書き）</option>
+                    </select>
+                </div>
+                
+                <!-- 配置 -->
+                <div class="property-group">
+                    <div class="property-label">📐 配置</div>
+                    <select onchange="app.updateCaptionSetting('align', this.value)" 
+                        style="width: 100%; padding: 8px; background: var(--chocolate-main); 
+                               color: var(--biscuit-light); border: 1px solid var(--chocolate-dark); border-radius: 4px;">
+                        <option value="center" ${settings.align === 'center' ? 'selected' : ''}>中央揃え</option>
+                        <option value="left" ${settings.align === 'left' ? 'selected' : ''}>左寄せ（縦書き:上寄せ）</option>
+                        <option value="right" ${settings.align === 'right' ? 'selected' : ''}>右寄せ（縦書き:下寄せ）</option>
+                    </select>
+                </div>
+                
+                <!-- フォントサイズ -->
+                <div class="property-group">
+                    <div class="property-label">📏 フォントサイズ: <span id="captionFontSizeValue">${settings.fontSize || 48}px</span></div>
+                    <input type="range" class="property-slider" value="${settings.fontSize || 48}" 
+                        min="12" max="200" step="2"
+                        oninput="document.getElementById('captionFontSizeValue').textContent = this.value + 'px'; app.updateCaptionSetting('fontSize', parseInt(this.value))">
+                </div>
+                
+                <!-- 文字色 -->
+                <div class="property-group">
+                    <div class="property-label">🎨 文字色</div>
+                    <input type="color" value="${settings.fontColor || '#FFFFFF'}" 
+                        oninput="app.updateCaptionSetting('fontColor', this.value)" 
+                        style="width: 100%; height: 40px; border: none; cursor: pointer;">
+                </div>
+                
+                <!-- ふちどり色 -->
+                <div class="property-group">
+                    <div class="property-label">🖊️ ふちどり色</div>
+                    <input type="color" value="${settings.strokeColor || '#000000'}" 
+                        oninput="app.updateCaptionSetting('strokeColor', this.value)" 
+                        style="width: 100%; height: 40px; border: none; cursor: pointer;">
+                </div>
+                
+                <!-- ふちどり太さ -->
+                <div class="property-group">
+                    <div class="property-label">📐 ふちどり太さ: <span id="captionStrokeWidthValue">${settings.strokeWidth || 4}px</span></div>
+                    <input type="range" class="property-slider" value="${settings.strokeWidth || 4}" 
+                        min="0" max="20" step="1"
+                        oninput="document.getElementById('captionStrokeWidthValue').textContent = this.value + 'px'; app.updateCaptionSetting('strokeWidth', parseInt(this.value))">
+                </div>
+                
+                <!-- 左右マージン -->
+                <div class="property-group">
+                    <div class="property-label">↔️ 左右マージン: <span id="captionMarginXValue">${settings.marginX || 50}px</span></div>
+                    <input type="range" class="property-slider" value="${settings.marginX || 50}" 
+                        min="0" max="400" step="10"
+                        oninput="document.getElementById('captionMarginXValue').textContent = this.value + 'px'; app.updateCaptionSetting('marginX', parseInt(this.value))">
+                </div>
+                
+                <!-- 上下マージン -->
+                <div class="property-group">
+                    <div class="property-label">↕️ 上下マージン: <span id="captionMarginYValue">${settings.marginY || 80}px</span></div>
+                    <input type="range" class="property-slider" value="${settings.marginY || 80}" 
+                        min="0" max="300" step="10"
+                        oninput="document.getElementById('captionMarginYValue').textContent = this.value + 'px'; app.updateCaptionSetting('marginY', parseInt(this.value))">
+                </div>
+                
+                <!-- 行間 -->
+                <div class="property-group">
+                    <div class="property-label">📊 行間: <span id="captionLineHeightValue">${settings.lineHeight || 1.4}</span></div>
+                    <input type="range" class="property-slider" value="${(settings.lineHeight || 1.4) * 10}" 
+                        min="10" max="30" step="1"
+                        oninput="document.getElementById('captionLineHeightValue').textContent = (this.value / 10).toFixed(1); app.updateCaptionSetting('lineHeight', parseFloat(this.value) / 10)">
+                </div>
+                
+                <!-- 字間 -->
+                <div class="property-group">
+                    <div class="property-label">📝 字間: <span id="captionLetterSpacingValue">${settings.letterSpacing || 0}px</span></div>
+                    <input type="range" class="property-slider" value="${settings.letterSpacing || 0}" 
+                        min="-10" max="50" step="1"
+                        oninput="document.getElementById('captionLetterSpacingValue').textContent = this.value + 'px'; app.updateCaptionSetting('letterSpacing', parseInt(this.value))">
+                </div>
+                
+                <!-- 背景色 -->
+                <div class="property-group">
+                    <div class="property-label">🎨 背景色</div>
+                    <input type="color" value="${settings.backgroundColor && settings.backgroundColor !== 'transparent' ? settings.backgroundColor : '#000000'}" 
+                        oninput="app.updateCaptionSetting('backgroundColor', this.value)" 
+                        style="width: 100%; height: 40px; border: none; cursor: pointer;">
+                </div>
+                
+                <!-- 背景不透明度 -->
+                <div class="property-group">
+                    <div class="property-label">🔲 背景不透明度: <span id="captionBgOpacityValue">${settings.backgroundOpacity || 0}%</span></div>
+                    <input type="range" class="property-slider" value="${settings.backgroundOpacity || 0}" 
+                        min="0" max="100" step="5"
+                        oninput="document.getElementById('captionBgOpacityValue').textContent = this.value + '%'; app.updateCaptionSetting('backgroundOpacity', parseInt(this.value))">
+                </div>
+                
+            </div>`;
         }
         
         // 映像クリップと生成オブジェクトの場合
@@ -3770,6 +4035,268 @@ class StarlitTimelineApp {
         this.saveHistory();
     }
     
+    // === 字幕クリップ関連メソッド ===
+    
+    // 字幕入力ポップアップを開く
+    openCaptionInputPopup() {
+        if (!this.selectedClip || this.selectedClip.asset.type !== 'caption') return;
+        
+        // 既存のポップアップがあれば削除
+        const existing = document.getElementById('captionInputPopup');
+        if (existing) existing.remove();
+        
+        const settings = this.selectedClip.asset.captionSettings;
+        const localTime = this.currentTime - this.selectedClip.startTime;
+        
+        // 現在時刻のテキストを取得
+        let currentText = settings.text || '';
+        if (settings.textKeyframes && settings.textKeyframes.length > 0) {
+            const sortedKeyframes = [...settings.textKeyframes].sort((a, b) => a.time - b.time);
+            for (const kf of sortedKeyframes) {
+                if (kf.time <= localTime) {
+                    currentText = kf.text;
+                }
+            }
+        }
+        
+        // ポップアップHTML
+        const popup = document.createElement('div');
+        popup.id = 'captionInputPopup';
+        popup.innerHTML = `
+            <div class="caption-popup-header">
+                <span>🎬 字幕入力</span>
+                <div class="caption-popup-buttons">
+                    <button class="caption-popup-btn" onclick="app.addCaptionTextKeyframe()" title="キーフレーム追加">⏱️</button>
+                    <button class="caption-popup-btn close" onclick="app.closeCaptionInputPopup()">✕</button>
+                </div>
+            </div>
+            <div class="caption-popup-content">
+                <textarea id="captionPopupTextarea" placeholder="字幕テキストを入力...">${this.escapeHtml(currentText)}</textarea>
+                <div class="caption-popup-info">
+                    <span id="captionPopupTime">現在: ${localTime.toFixed(2)}s</span>
+                    <span id="captionPopupKeyframes">${settings.textKeyframes?.length || 0} キーフレーム</span>
+                </div>
+            </div>
+        `;
+        
+        // スタイルを適用
+        popup.style.cssText = `
+            position: fixed;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 500px;
+            background: linear-gradient(135deg, #3d2f25, #2D1810);
+            border: 2px solid #6B4423;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            z-index: 10000;
+            font-family: 'JK Maru Gothic', sans-serif;
+        `;
+        
+        document.body.appendChild(popup);
+        
+        // ドラッグ機能をセットアップ
+        this.setupCaptionPopupDrag(popup);
+        
+        // テキストエリアのリアルタイム更新
+        const textarea = document.getElementById('captionPopupTextarea');
+        textarea.addEventListener('input', () => {
+            this.updateCaptionSetting('text', textarea.value);
+            // プロパティパネルのテキストエリアも同期
+            const propTextarea = document.getElementById('captionTextInput');
+            if (propTextarea) propTextarea.value = textarea.value;
+        });
+        
+        // フォーカス
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+    
+    // 字幕入力ポップアップを閉じる
+    closeCaptionInputPopup() {
+        const popup = document.getElementById('captionInputPopup');
+        if (popup) popup.remove();
+    }
+    
+    // ポップアップのドラッグ機能
+    setupCaptionPopupDrag(popup) {
+        const header = popup.querySelector('.caption-popup-header');
+        let isDragging = false;
+        let startX, startY, initialX, initialY;
+        
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = popup.getBoundingClientRect();
+            initialX = rect.left;
+            initialY = rect.top;
+            popup.style.transform = 'none';
+            popup.style.cursor = 'grabbing';
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            popup.style.left = (initialX + dx) + 'px';
+            popup.style.top = (initialY + dy) + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            popup.style.cursor = '';
+        });
+        
+        // タッチ対応
+        header.addEventListener('touchstart', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            isDragging = true;
+            const touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            const rect = popup.getBoundingClientRect();
+            initialX = rect.left;
+            initialY = rect.top;
+            popup.style.transform = 'none';
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            const dx = touch.clientX - startX;
+            const dy = touch.clientY - startY;
+            popup.style.left = (initialX + dx) + 'px';
+            popup.style.top = (initialY + dy) + 'px';
+        });
+        
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+    }
+    
+    // ポップアップのテキストエリアを更新（時間変更時）
+    updateCaptionPopupText() {
+        const popup = document.getElementById('captionInputPopup');
+        if (!popup || !this.selectedClip || this.selectedClip.asset.type !== 'caption') return;
+        
+        const settings = this.selectedClip.asset.captionSettings;
+        const localTime = this.currentTime - this.selectedClip.startTime;
+        
+        // 現在時刻のテキストを取得
+        let currentText = settings.text || '';
+        if (settings.textKeyframes && settings.textKeyframes.length > 0) {
+            const sortedKeyframes = [...settings.textKeyframes].sort((a, b) => a.time - b.time);
+            for (const kf of sortedKeyframes) {
+                if (kf.time <= localTime) {
+                    currentText = kf.text;
+                }
+            }
+        }
+        
+        const textarea = document.getElementById('captionPopupTextarea');
+        if (textarea && textarea !== document.activeElement) {
+            textarea.value = currentText;
+        }
+        
+        const timeSpan = document.getElementById('captionPopupTime');
+        if (timeSpan) {
+            timeSpan.textContent = `現在: ${localTime.toFixed(2)}s`;
+        }
+        
+        const kfSpan = document.getElementById('captionPopupKeyframes');
+        if (kfSpan) {
+            kfSpan.textContent = `${settings.textKeyframes?.length || 0} キーフレーム`;
+        }
+    }
+    
+    // 字幕設定を更新
+    updateCaptionSetting(property, value) {
+        if (!this.selectedClip || this.selectedClip.asset.type !== 'caption') return;
+        
+        const settings = this.selectedClip.asset.captionSettings;
+        if (!settings) return;
+        
+        settings[property] = value;
+        
+        this.updatePreview();
+        this.saveHistory();
+    }
+    
+    // 字幕テキストキーフレームを追加
+    addCaptionTextKeyframe() {
+        if (!this.selectedClip || this.selectedClip.asset.type !== 'caption') return;
+        
+        const settings = this.selectedClip.asset.captionSettings;
+        if (!settings) return;
+        
+        const localTime = this.currentTime - this.selectedClip.startTime;
+        const textInput = document.getElementById('captionTextInput');
+        const currentText = textInput ? textInput.value : settings.text;
+        
+        if (!settings.textKeyframes) {
+            settings.textKeyframes = [];
+        }
+        
+        // 既存のキーフレームがあれば更新、なければ追加
+        const existing = settings.textKeyframes.find(kf => Math.abs(kf.time - localTime) < 0.05);
+        if (existing) {
+            existing.text = currentText;
+            console.log(`✏️ Updated caption keyframe at ${localTime.toFixed(2)}s`);
+        } else {
+            settings.textKeyframes.push({ time: localTime, text: currentText });
+            settings.textKeyframes.sort((a, b) => a.time - b.time);
+            console.log(`➕ Added caption keyframe at ${localTime.toFixed(2)}s`);
+        }
+        
+        this.updatePreview();
+        this.updatePropertiesPanel();
+        this.drawTimeline();
+        this.saveHistory();
+    }
+    
+    // 字幕テキストキーフレームを削除
+    removeCaptionTextKeyframe(index) {
+        if (!this.selectedClip || this.selectedClip.asset.type !== 'caption') return;
+        
+        const settings = this.selectedClip.asset.captionSettings;
+        if (!settings || !settings.textKeyframes) return;
+        
+        settings.textKeyframes.splice(index, 1);
+        
+        this.updatePreview();
+        this.updatePropertiesPanel();
+        this.drawTimeline();
+        this.saveHistory();
+    }
+    
+    // 全字幕テキストキーフレームをクリア
+    clearCaptionTextKeyframes() {
+        if (!this.selectedClip || this.selectedClip.asset.type !== 'caption') return;
+        
+        const settings = this.selectedClip.asset.captionSettings;
+        if (!settings) return;
+        
+        if (confirm('すべてのテキストキーフレームをクリアしますか？')) {
+            settings.textKeyframes = [];
+            
+            this.updatePreview();
+            this.updatePropertiesPanel();
+            this.drawTimeline();
+            this.saveHistory();
+        }
+    }
+    
+    // HTMLエスケープ
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
     // キーフレーム管理
     getKeyframeValue(clip, property, localTime) {
         const keyframes = clip.keyframes[property];
@@ -4375,6 +4902,9 @@ class StarlitTimelineApp {
         } else if (clip.asset.type === 'solid' || clip.asset.type === 'gradient' || clip.asset.type === 'stripe') {
             // 生成オブジェクトを描画
             this.drawGeneratedObject(clip);
+        } else if (clip.asset.type === 'caption') {
+            // 字幕クリップを描画
+            this.drawCaption(clip);
         } else if (clip.asset.type === 'scene') {
             // シーンクリップを描画
             await this.sceneManager.renderSceneClip(targetCtx, clip, effectiveLocalTime, {
@@ -4644,6 +5174,281 @@ class StarlitTimelineApp {
         
         // 中心を基準に描画
         ctx.drawImage(canvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    }
+    
+    // 字幕を描画
+    drawCaption(clip) {
+        const ctx = this.previewCtx;
+        const settings = clip.asset.captionSettings;
+        if (!settings) return;
+        
+        // 現在時間のテキストを取得（キーフレーム対応）
+        const localTime = this.currentTime - clip.startTime;
+        let displayText = settings.text;
+        
+        // キーフレームからテキストを取得
+        if (settings.textKeyframes && settings.textKeyframes.length > 0) {
+            // 現在時間以前の最も近いキーフレームを探す
+            const sortedKeyframes = [...settings.textKeyframes].sort((a, b) => a.time - b.time);
+            let activeKeyframe = null;
+            
+            for (const kf of sortedKeyframes) {
+                if (kf.time <= localTime) {
+                    activeKeyframe = kf;
+                } else {
+                    break;
+                }
+            }
+            
+            if (activeKeyframe) {
+                displayText = activeKeyframe.text;
+            }
+        }
+        
+        if (!displayText || displayText.trim() === '') return;
+        
+        // 変換を一旦リセット（字幕は画面固定位置に描画）
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        
+        const canvasWidth = this.previewCanvas.width;
+        const canvasHeight = this.previewCanvas.height;
+        
+        // フォント設定
+        const fontSize = settings.fontSize || 48;
+        const fontFamily = "'CineCaption', 'JK Maru Gothic', sans-serif";
+        
+        // 縦書きかどうか判定
+        const isVertical = settings.position === 'left-vertical' || settings.position === 'right-vertical';
+        
+        if (isVertical) {
+            this.drawVerticalCaption(ctx, displayText, settings, canvasWidth, canvasHeight, fontSize, fontFamily);
+        } else {
+            this.drawHorizontalCaption(ctx, displayText, settings, canvasWidth, canvasHeight, fontSize, fontFamily);
+        }
+        
+        ctx.restore();
+    }
+    
+    // 横書き字幕を描画
+    drawHorizontalCaption(ctx, text, settings, canvasWidth, canvasHeight, fontSize, fontFamily) {
+        ctx.font = `${fontSize}px ${fontFamily}`;
+        ctx.textAlign = settings.align || 'center';
+        ctx.textBaseline = 'middle';
+        
+        // テキストを行に分割
+        const lines = text.split('\n');
+        const lineHeight = fontSize * (settings.lineHeight || 1.4);
+        const totalHeight = lines.length * lineHeight;
+        
+        // 位置計算
+        let baseX, baseY;
+        const marginX = settings.marginX || 50;
+        const marginY = settings.marginY || 80;
+        
+        if (settings.align === 'left') {
+            baseX = marginX;
+        } else if (settings.align === 'right') {
+            baseX = canvasWidth - marginX;
+        } else {
+            baseX = canvasWidth / 2;
+        }
+        
+        if (settings.position === 'top') {
+            baseY = marginY + totalHeight / 2;
+        } else {
+            baseY = canvasHeight - marginY - totalHeight / 2;
+        }
+        
+        // 背景を描画（必要な場合）
+        if (settings.backgroundColor && settings.backgroundColor !== 'transparent' && settings.backgroundOpacity > 0) {
+            const padding = settings.backgroundPadding || 10;
+            let maxWidth = 0;
+            
+            for (const line of lines) {
+                const metrics = ctx.measureText(line);
+                maxWidth = Math.max(maxWidth, metrics.width);
+            }
+            
+            const bgX = settings.align === 'left' ? baseX - padding :
+                        settings.align === 'right' ? baseX - maxWidth - padding :
+                        baseX - maxWidth / 2 - padding;
+            const bgY = baseY - totalHeight / 2 - padding;
+            const bgWidth = maxWidth + padding * 2;
+            const bgHeight = totalHeight + padding * 2;
+            
+            ctx.fillStyle = this.hexToRgba(settings.backgroundColor, settings.backgroundOpacity / 100);
+            ctx.beginPath();
+            ctx.roundRect(bgX, bgY, bgWidth, bgHeight, 8);
+            ctx.fill();
+        }
+        
+        // 各行を描画
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const y = baseY - totalHeight / 2 + lineHeight / 2 + i * lineHeight;
+            
+            // 字間を適用
+            if (settings.letterSpacing && settings.letterSpacing !== 0) {
+                this.drawTextWithLetterSpacing(ctx, line, baseX, y, settings);
+            } else {
+                // ふちどりを描画
+                if (settings.strokeWidth > 0) {
+                    ctx.strokeStyle = settings.strokeColor || '#000000';
+                    ctx.lineWidth = settings.strokeWidth * 2;
+                    ctx.lineJoin = 'round';
+                    ctx.miterLimit = 2;
+                    ctx.strokeText(line, baseX, y);
+                }
+                
+                // 本体を描画
+                ctx.fillStyle = settings.fontColor || '#FFFFFF';
+                ctx.fillText(line, baseX, y);
+            }
+        }
+    }
+    
+    // 縦書き字幕を描画
+    drawVerticalCaption(ctx, text, settings, canvasWidth, canvasHeight, fontSize, fontFamily) {
+        const lineHeight = fontSize * (settings.lineHeight || 1.4);
+        const marginX = settings.marginX || 50;
+        const marginY = settings.marginY || 80;
+        
+        // テキストを行（列）に分割
+        const columns = text.split('\n');
+        const totalWidth = columns.length * lineHeight;
+        
+        // 位置計算
+        let startX;
+        if (settings.position === 'right-vertical') {
+            startX = canvasWidth - marginX - lineHeight / 2;
+        } else {
+            startX = marginX + totalWidth - lineHeight / 2;
+        }
+        
+        // 縦方向の配置
+        let startY;
+        if (settings.align === 'left') { // 縦書きでは上寄せ
+            startY = marginY + fontSize / 2;
+        } else if (settings.align === 'right') { // 縦書きでは下寄せ
+            // 最長の列を基準に計算
+            let maxChars = 0;
+            for (const col of columns) {
+                maxChars = Math.max(maxChars, col.length);
+            }
+            startY = canvasHeight - marginY - maxChars * fontSize * (settings.letterSpacing ? 1 + settings.letterSpacing / 100 : 1);
+        } else { // 中央
+            startY = canvasHeight / 2;
+        }
+        
+        ctx.font = `${fontSize}px ${fontFamily}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // 各列を描画（右から左へ）
+        for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+            const column = columns[colIndex];
+            const x = settings.position === 'right-vertical' 
+                ? startX - colIndex * lineHeight 
+                : startX - (columns.length - 1 - colIndex) * lineHeight;
+            
+            // 縦書きで中央揃えの場合の開始Y位置調整
+            let charY = startY;
+            if (settings.align === 'center') {
+                const totalCharHeight = column.length * fontSize * (settings.letterSpacing ? 1 + settings.letterSpacing / 100 : 1);
+                charY = (canvasHeight - totalCharHeight) / 2 + fontSize / 2;
+            }
+            
+            // 各文字を縦に配置
+            for (let charIndex = 0; charIndex < column.length; charIndex++) {
+                const char = column[charIndex];
+                const y = charY + charIndex * fontSize * (settings.letterSpacing ? 1 + settings.letterSpacing / 100 : 1);
+                
+                // 縦書き用の文字回転（一部の記号は回転が必要）
+                ctx.save();
+                ctx.translate(x, y);
+                
+                // 括弧や長音符号などは回転
+                if (this.shouldRotateForVertical(char)) {
+                    ctx.rotate(Math.PI / 2);
+                }
+                
+                // ふちどりを描画
+                if (settings.strokeWidth > 0) {
+                    ctx.strokeStyle = settings.strokeColor || '#000000';
+                    ctx.lineWidth = settings.strokeWidth * 2;
+                    ctx.lineJoin = 'round';
+                    ctx.miterLimit = 2;
+                    ctx.strokeText(char, 0, 0);
+                }
+                
+                // 本体を描画
+                ctx.fillStyle = settings.fontColor || '#FFFFFF';
+                ctx.fillText(char, 0, 0);
+                
+                ctx.restore();
+            }
+        }
+    }
+    
+    // 字間を適用してテキストを描画
+    drawTextWithLetterSpacing(ctx, text, x, y, settings) {
+        const spacing = settings.letterSpacing || 0;
+        const fontSize = settings.fontSize || 48;
+        const chars = [...text]; // Unicodeを考慮して分解
+        
+        let currentX = x;
+        
+        // 中央揃えの場合は開始位置を調整
+        if (settings.align === 'center') {
+            let totalWidth = 0;
+            for (const char of chars) {
+                totalWidth += ctx.measureText(char).width + spacing;
+            }
+            currentX = x - totalWidth / 2 + spacing / 2;
+        } else if (settings.align === 'right') {
+            let totalWidth = 0;
+            for (const char of chars) {
+                totalWidth += ctx.measureText(char).width + spacing;
+            }
+            currentX = x - totalWidth;
+        }
+        
+        for (const char of chars) {
+            // ふちどりを描画
+            if (settings.strokeWidth > 0) {
+                ctx.strokeStyle = settings.strokeColor || '#000000';
+                ctx.lineWidth = settings.strokeWidth * 2;
+                ctx.lineJoin = 'round';
+                ctx.miterLimit = 2;
+                ctx.strokeText(char, currentX, y);
+            }
+            
+            // 本体を描画
+            ctx.fillStyle = settings.fontColor || '#FFFFFF';
+            ctx.fillText(char, currentX, y);
+            
+            currentX += ctx.measureText(char).width + spacing;
+        }
+    }
+    
+    // 縦書き時に回転が必要な文字かどうか
+    shouldRotateForVertical(char) {
+        // 括弧、長音符号、ハイフン等は90度回転
+        const rotateChars = '「」『』（）()【】[]｛｝{}〔〕〈〉《》〖〗ー—―─━…‥～〜';
+        return rotateChars.includes(char);
+    }
+    
+    // HEXカラーをRGBAに変換
+    hexToRgba(hex, alpha) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (result) {
+            const r = parseInt(result[1], 16);
+            const g = parseInt(result[2], 16);
+            const b = parseInt(result[3], 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+        return `rgba(0, 0, 0, ${alpha})`;
     }
     
     drawImageOnCanvas(clip) {
@@ -5868,6 +6673,8 @@ class StarlitTimelineApp {
                 this.updateTimeDisplay();
                 this.updatePreview();
                 this.drawTimeline();
+                // 字幕ポップアップの時間表示を更新
+                this.updateCaptionPopupText();
             }
             
             this.playbackAnimationFrame = requestAnimationFrame(playbackLoop);
@@ -6491,7 +7298,26 @@ class StarlitTimelineApp {
                     // 連番の場合はフレーム数も保存
                     ...(clip.asset.type === 'sequence' ? { frameCount: clip.asset.frameCount } : {}),
                     // シーン素材の場合はシーンIDも保存
-                    ...(clip.asset.type === 'scene' ? { sceneId: clip.asset.sceneId } : {})
+                    ...(clip.asset.type === 'scene' ? { sceneId: clip.asset.sceneId } : {}),
+                    // 字幕クリップの場合は設定を保存
+                    ...(clip.asset.type === 'caption' ? { captionSettings: clip.asset.captionSettings } : {}),
+                    // ソリッドカラーの場合は色を保存
+                    ...(clip.asset.type === 'solid' ? { color: clip.asset.color } : {}),
+                    // グラデーションの場合は設定を保存
+                    ...(clip.asset.type === 'gradient' ? { 
+                        color1: clip.asset.color1, 
+                        color2: clip.asset.color2,
+                        direction: clip.asset.direction,
+                        gradientType: clip.asset.gradientType
+                    } : {}),
+                    // ストライプの場合は設定を保存
+                    ...(clip.asset.type === 'stripe' ? { 
+                        color1: clip.asset.color1, 
+                        color2: clip.asset.color2,
+                        stripeWidth: clip.asset.stripeWidth,
+                        direction: clip.asset.direction,
+                        stripeType: clip.asset.stripeType
+                    } : {})
                 }
             })),
             // エフェクトのenabledフラグのみ保存（パラメーターはlocalStorageに保存済み）
@@ -6769,8 +7595,79 @@ class StarlitTimelineApp {
         
         // クリップを復元
         for (const clipData of project.clips) {
-            // 素材を名前で検索
-            const asset = this.assets.find(a => a.name === clipData.asset.name);
+            let asset = null;
+            
+            // 生成オブジェクトの場合は動的に作成
+            if (clipData.asset.type === 'solid') {
+                asset = {
+                    id: clipData.asset.id,
+                    name: clipData.asset.name,
+                    type: 'solid',
+                    color: clipData.asset.color || '#FF6B9D',
+                    element: this.createSolidColorCanvas(clipData.asset.color || '#FF6B9D')
+                };
+                this.assets.push(asset);
+                console.log(`✅ ソリッドカラーを復元: ${asset.name}`);
+            } else if (clipData.asset.type === 'gradient') {
+                const color1 = clipData.asset.color1 || '#FF6B9D';
+                const color2 = clipData.asset.gradientType === '2' ? 'transparent' : (clipData.asset.color2 || '#6B9DFF');
+                asset = {
+                    id: clipData.asset.id,
+                    name: clipData.asset.name,
+                    type: 'gradient',
+                    color1: color1,
+                    color2: clipData.asset.color2 || '#6B9DFF',
+                    direction: clipData.asset.direction || '1',
+                    gradientType: clipData.asset.gradientType || '1',
+                    element: this.createGradientCanvas(color1, color2, clipData.asset.direction || '1')
+                };
+                this.assets.push(asset);
+                console.log(`✅ グラデーションを復元: ${asset.name}`);
+            } else if (clipData.asset.type === 'stripe') {
+                const color1 = clipData.asset.color1 || '#FF6B9D';
+                const color2 = clipData.asset.stripeType === '2' ? 'transparent' : (clipData.asset.color2 || '#6B9DFF');
+                asset = {
+                    id: clipData.asset.id,
+                    name: clipData.asset.name,
+                    type: 'stripe',
+                    color1: color1,
+                    color2: clipData.asset.color2 || '#6B9DFF',
+                    stripeWidth: clipData.asset.stripeWidth || 50,
+                    direction: clipData.asset.direction || '1',
+                    stripeType: clipData.asset.stripeType || '1',
+                    element: this.createStripeCanvas(color1, color2, clipData.asset.stripeWidth || 50, clipData.asset.direction || '1')
+                };
+                this.assets.push(asset);
+                console.log(`✅ ストライプを復元: ${asset.name}`);
+            } else if (clipData.asset.type === 'caption') {
+                asset = {
+                    id: clipData.asset.id,
+                    name: clipData.asset.name,
+                    type: 'caption',
+                    captionSettings: clipData.asset.captionSettings || {
+                        text: 'ここに字幕を入力',
+                        position: 'bottom',
+                        align: 'center',
+                        fontSize: 48,
+                        fontColor: '#FFFFFF',
+                        strokeColor: '#000000',
+                        strokeWidth: 4,
+                        backgroundColor: 'transparent',
+                        backgroundOpacity: 0,
+                        backgroundPadding: 10,
+                        marginX: 50,
+                        marginY: 80,
+                        lineHeight: 1.4,
+                        letterSpacing: 0,
+                        textKeyframes: []
+                    }
+                };
+                this.assets.push(asset);
+                console.log(`✅ 字幕を復元: ${asset.name}`);
+            } else {
+                // 素材を名前で検索
+                asset = this.assets.find(a => a.name === clipData.asset.name);
+            }
             
             if (!asset) {
                 console.warn(`❌ 素材が見つかりません: ${clipData.asset.name}`);
