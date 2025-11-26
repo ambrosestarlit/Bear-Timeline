@@ -226,6 +226,9 @@ class StarlitTimelineApp {
         // シーンマネージャーを初期化
         this.sceneManager = new SceneManager(this);
         
+        // ADV字幕マネージャーを初期化
+        this.advCaptionManager = new ADVCaptionManager(this);
+        
         this.init();
     }
     
@@ -1397,6 +1400,13 @@ class StarlitTimelineApp {
         this.updatePreview();
     }
     
+    // ADV風字幕クリップを作成
+    createADVCaptionClip() {
+        if (this.advCaptionManager) {
+            this.advCaptionManager.createADVCaptionClip();
+        }
+    }
+    
     // ベタ塗りキャンバスを作成
     createSolidColorCanvas(color) {
         const canvas = document.createElement('canvas');
@@ -2165,6 +2175,9 @@ class StarlitTimelineApp {
         } else if (clip.asset.type === 'caption') {
             // 字幕クリップは紫系の色
             ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#8B4B8B';
+        } else if (clip.asset.type === 'adv-caption') {
+            // ADV字幕クリップは緑系の色
+            ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#4B8B6B';
         } else {
             ctx.fillStyle = clip === this.selectedClip ? '#D2691E' : '#6B4423';
         }
@@ -2495,6 +2508,32 @@ class StarlitTimelineApp {
                 }
             });
         }
+        
+        // ADV字幕クリップのキーフレーム
+        if (clip.asset.type === 'adv-caption' && clip.asset.advCaptionSettings && clip.asset.advCaptionSettings.keyframes) {
+            const advKeyframes = clip.asset.advCaptionSettings.keyframes;
+            advKeyframes.forEach(kf => {
+                const x = clipX + (kf.time * this.zoom);
+                const y = clipY + clipHeight - keyframeSize - 2 - yOffset;
+                
+                // くま画像が読み込まれていれば画像を描画
+                if (this.keyframeImage && this.keyframeImage.complete) {
+                    ctx.drawImage(
+                        this.keyframeImage,
+                        x - keyframeSize / 2,
+                        y,
+                        keyframeSize,
+                        keyframeSize
+                    );
+                } else {
+                    // フォールバック: 緑色の丸（ADV字幕用）
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.beginPath();
+                    ctx.arc(x, y + keyframeSize / 2, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
     }
     
     drawPlayhead() {
@@ -2689,6 +2728,7 @@ class StarlitTimelineApp {
             this.isDraggingKeyframe = true;
             this.draggingKeyframe = keyframe;
             this.dragStartX = x;
+            this.keyframeInitialTime = keyframe.keyframe.time; // 初期時間を保存
             return;
         }
         
@@ -2785,16 +2825,34 @@ class StarlitTimelineApp {
             const scrollContainer = document.getElementById('timelineScroll');
             const x = (e.clientX - rect.left) + scrollContainer.scrollLeft;
             
+            // 初期時間からの差分で計算（dragStartXは更新しない）
             const deltaX = x - this.dragStartX;
-            const newTime = this.draggingKeyframe.keyframe.time + (deltaX / this.zoom);
+            const newTime = this.keyframeInitialTime + (deltaX / this.zoom);
             
             // クリップの範囲内に制限
             const clip = this.draggingKeyframe.clip;
             const maxTime = clip.duration;
-            this.draggingKeyframe.keyframe.time = Math.max(0, Math.min(newTime, maxTime));
+            const clampedTime = Math.max(0, Math.min(newTime, maxTime));
             
-            // キーフレームを時刻順にソート
-            clip.keyframes[this.draggingKeyframe.property].sort((a, b) => a.time - b.time);
+            // キーフレームのタイプに応じて処理
+            if (this.draggingKeyframe.type === 'adv-caption') {
+                // ADV字幕のキーフレーム
+                this.draggingKeyframe.keyframe.time = clampedTime;
+                clip.asset.advCaptionSettings.keyframes.sort((a, b) => a.time - b.time);
+                
+                // エディターのキーフレームリストも更新
+                if (this.advCaptionManager) {
+                    this.advCaptionManager.updateEditorKeyframeList();
+                }
+            } else if (this.draggingKeyframe.type === 'caption') {
+                // 字幕のキーフレーム
+                this.draggingKeyframe.keyframe.time = clampedTime;
+                clip.asset.captionSettings.textKeyframes.sort((a, b) => a.time - b.time);
+            } else {
+                // トランスフォームのキーフレーム
+                this.draggingKeyframe.keyframe.time = clampedTime;
+                clip.keyframes[this.draggingKeyframe.property].sort((a, b) => a.time - b.time);
+            }
             
             this.drawTimeline();
             this.updatePreview();
@@ -2890,7 +2948,7 @@ class StarlitTimelineApp {
             // クリップの範囲内か確認
             if (y < clipY || y > clipY + clipHeight) continue;
             
-            // すべてのプロパティのキーフレームをチェック
+            // トランスフォームのキーフレームをチェック
             for (let property in clip.keyframes) {
                 const keyframes = clip.keyframes[property];
                 for (let i = 0; i < keyframes.length; i++) {
@@ -2905,7 +2963,50 @@ class StarlitTimelineApp {
                             clip: clip,
                             property: property,
                             index: i,
-                            keyframe: kf
+                            keyframe: kf,
+                            type: 'transform'
+                        };
+                    }
+                }
+            }
+            
+            // ADV字幕のキーフレームをチェック
+            if (clip.asset.type === 'adv-caption' && clip.asset.advCaptionSettings?.keyframes) {
+                const keyframes = clip.asset.advCaptionSettings.keyframes;
+                for (let i = 0; i < keyframes.length; i++) {
+                    const kf = keyframes[i];
+                    const kfX = clipX + (kf.time * this.zoom);
+                    const kfY = clipY + clipHeight - keyframeSize - 2;
+                    
+                    if (Math.abs(x - kfX) < hitArea && 
+                        y >= kfY && y <= kfY + keyframeSize) {
+                        return {
+                            clip: clip,
+                            property: 'advCaption',
+                            index: i,
+                            keyframe: kf,
+                            type: 'adv-caption'
+                        };
+                    }
+                }
+            }
+            
+            // 字幕のキーフレームをチェック
+            if (clip.asset.type === 'caption' && clip.asset.captionSettings?.textKeyframes) {
+                const keyframes = clip.asset.captionSettings.textKeyframes;
+                for (let i = 0; i < keyframes.length; i++) {
+                    const kf = keyframes[i];
+                    const kfX = clipX + (kf.time * this.zoom);
+                    const kfY = clipY + clipHeight - keyframeSize - 2;
+                    
+                    if (Math.abs(x - kfX) < hitArea && 
+                        y >= kfY && y <= kfY + keyframeSize) {
+                        return {
+                            clip: clip,
+                            property: 'caption',
+                            index: i,
+                            keyframe: kf,
+                            type: 'caption'
                         };
                     }
                 }
@@ -2914,9 +3015,21 @@ class StarlitTimelineApp {
         return null;
     }
     
-    deleteKeyframe(clip, property, index) {
+    deleteKeyframe(clip, property, index, type) {
         if (confirm('このキーフレームを削除しますか?')) {
-            clip.keyframes[property].splice(index, 1);
+            if (type === 'adv-caption') {
+                // ADV字幕のキーフレーム
+                clip.asset.advCaptionSettings.keyframes.splice(index, 1);
+                if (this.advCaptionManager) {
+                    this.advCaptionManager.updateEditorKeyframeList();
+                }
+            } else if (type === 'caption') {
+                // 字幕のキーフレーム
+                clip.asset.captionSettings.textKeyframes.splice(index, 1);
+            } else {
+                // トランスフォームのキーフレーム
+                clip.keyframes[property].splice(index, 1);
+            }
             this.drawTimeline();
             this.updatePreview();
             this.updatePropertiesPanel();
@@ -3307,6 +3420,13 @@ class StarlitTimelineApp {
                 </div>
                 
             </div>`;
+        }
+        
+        // ADV字幕クリップの場合
+        if (clip.asset.type === 'adv-caption') {
+            if (this.advCaptionManager) {
+                propertiesHTML += this.advCaptionManager.generatePropertiesHTML(clip);
+            }
         }
         
         // 映像クリップと生成オブジェクトの場合
@@ -4905,6 +5025,11 @@ class StarlitTimelineApp {
         } else if (clip.asset.type === 'caption') {
             // 字幕クリップを描画
             this.drawCaption(clip);
+        } else if (clip.asset.type === 'adv-caption') {
+            // ADV字幕クリップを描画
+            if (this.advCaptionManager) {
+                this.advCaptionManager.drawADVCaption(clip, this.previewCtx, this.currentTime);
+            }
         } else if (clip.asset.type === 'scene') {
             // シーンクリップを描画
             await this.sceneManager.renderSceneClip(targetCtx, clip, effectiveLocalTime, {
@@ -7301,6 +7426,8 @@ class StarlitTimelineApp {
                     ...(clip.asset.type === 'scene' ? { sceneId: clip.asset.sceneId } : {}),
                     // 字幕クリップの場合は設定を保存
                     ...(clip.asset.type === 'caption' ? { captionSettings: clip.asset.captionSettings } : {}),
+                    // ADV字幕クリップの場合は設定を保存
+                    ...(clip.asset.type === 'adv-caption' ? { advCaptionSettings: clip.asset.advCaptionSettings } : {}),
                     // ソリッドカラーの場合は色を保存
                     ...(clip.asset.type === 'solid' ? { color: clip.asset.color } : {}),
                     // グラデーションの場合は設定を保存
@@ -7402,6 +7529,9 @@ class StarlitTimelineApp {
         const file = event.target.files[0];
         if (!file) return;
         
+        // ファイル入力をリセット（同じファイルを再選択できるように）
+        event.target.value = '';
+        
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
@@ -7456,20 +7586,72 @@ class StarlitTimelineApp {
                 this.updateEffectUI();
                 this.updatePreview();
                 
-                // 素材ZIP読み込みを促す
+                // 素材ZIP読み込みモーダルを表示
                 const projectName = project.projectName || 'プロジェクト';
-                if (confirm(`プロジェクト「${projectName}」を読み込みました。\n\n続いて素材ZIPファイル（${projectName}_assets.zip）を選択してください。`)) {
-                    document.getElementById('assetsZipInput').click();
-                } else {
-                    this.showNotification('⚠️ 素材なしでプロジェクトを読み込みました');
-                    this.pendingProject = null;
-                }
+                this.showAssetZipLoadModal(projectName);
                 
             } catch (err) {
                 alert('プロジェクトの読み込みに失敗しました:\n' + err.message);
             }
         };
         reader.readAsText(file);
+    }
+    
+    // 素材ZIP読み込みモーダルを表示
+    showAssetZipLoadModal(projectName) {
+        // 既存のモーダルがあれば削除
+        const existingModal = document.getElementById('assetZipModal');
+        if (existingModal) existingModal.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = 'assetZipModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 20000;
+        `;
+        
+        modal.innerHTML = `
+            <div style="background: var(--chocolate-main, #3d2817); padding: 30px; border-radius: 12px; text-align: center; max-width: 500px; border: 3px solid var(--accent-orange, #D2691E);">
+                <h2 style="color: var(--biscuit-light, #F5DEB3); margin: 0 0 20px 0;">📦 素材ZIPを読み込み</h2>
+                <p style="color: var(--biscuit-main, #DEB887); margin-bottom: 20px;">
+                    プロジェクト「${projectName}」を読み込みました。<br><br>
+                    素材ZIPファイル<br>
+                    <strong style="color: var(--accent-orange, #D2691E);">${projectName}_assets.zip</strong><br>
+                    を選択してください。
+                </p>
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button id="assetZipSelectBtn" style="padding: 12px 30px; background: var(--accent-orange, #D2691E); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">
+                        📁 素材ZIPを選択
+                    </button>
+                    <button id="assetZipSkipBtn" style="padding: 12px 20px; background: #666; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        スキップ
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // 素材ZIP選択ボタン
+        document.getElementById('assetZipSelectBtn').addEventListener('click', () => {
+            modal.remove();
+            document.getElementById('assetsZipInput').click();
+        });
+        
+        // スキップボタン
+        document.getElementById('assetZipSkipBtn').addEventListener('click', () => {
+            modal.remove();
+            this.showNotification('⚠️ 素材なしでプロジェクトを読み込みました');
+            this.pendingProject = null;
+        });
     }
     
     // 素材ZIPを読み込み
@@ -7544,6 +7726,13 @@ class StarlitTimelineApp {
             
             this.showNotification('✅ 素材を復元しました！');
             this.renderAssets();
+            
+            // フラグを強制リセット（前の処理が完了していない場合に備えて）
+            this.isUpdatingPreview = false;
+            
+            // プレビューを更新
+            this.drawTimeline();
+            await this.updatePreview();
             
         } catch (err) {
             alert('素材ZIPの読み込みに失敗しました:\n' + err.message);
@@ -7664,6 +7853,69 @@ class StarlitTimelineApp {
                 };
                 this.assets.push(asset);
                 console.log(`✅ 字幕を復元: ${asset.name}`);
+            } else if (clipData.asset.type === 'adv-caption') {
+                asset = {
+                    id: clipData.asset.id,
+                    name: clipData.asset.name,
+                    type: 'adv-caption',
+                    advCaptionSettings: clipData.asset.advCaptionSettings || {
+                        characterName: '',
+                        dialogueText: 'ここにセリフを入力',
+                        messageBox: {
+                            category: 'japanese',
+                            file: 'J01',
+                            opacity: 100,
+                            scale: 100,
+                            positionY: 0
+                        },
+                        nameSettings: {
+                            fontSize: 32,
+                            fontFamily: 'jk-maru',
+                            color: '#FFFFFF',
+                            strokeColor: '#000000',
+                            strokeWidth: 2,
+                            positionX: 100,
+                            positionY: 750,
+                            visible: true
+                        },
+                        dialogueSettings: {
+                            fontSize: 40,
+                            fontFamily: 'jk-maru',
+                            color: '#FFFFFF',
+                            strokeColor: '#000000',
+                            strokeWidth: 3,
+                            marginLeft: 100,
+                            marginRight: 100,
+                            marginTop: 820,
+                            lineHeight: 1.5,
+                            letterSpacing: 2
+                        },
+                        typewriter: {
+                            enabled: true,
+                            useGlobalSpeed: true,
+                            localSpeed: 20
+                        },
+                        transition: {
+                            in: 'fade',
+                            out: 'fade',
+                            duration: 0.3
+                        },
+                        keyframes: []
+                    }
+                };
+                this.assets.push(asset);
+                
+                // メッセージボックス画像をプリロード（awaitで待つ）
+                if (this.advCaptionManager) {
+                    try {
+                        await this.advCaptionManager.loadMessageBoxImage(
+                            asset.advCaptionSettings.messageBox.category,
+                            asset.advCaptionSettings.messageBox.file
+                        );
+                    } catch (err) {
+                        console.warn('⚠️ メッセージボックス画像読み込み失敗:', err);
+                    }
+                }
             } else {
                 // 素材を名前で検索
                 asset = this.assets.find(a => a.name === clipData.asset.name);
@@ -7751,6 +8003,9 @@ class StarlitTimelineApp {
         }
         
         console.log('✅ クリップ復元完了:', this.clips.length, 'クリップ');
+        
+        // フラグを強制リセット
+        this.isUpdatingPreview = false;
         
         this.drawTimeline();
         this.updatePreview();
@@ -8994,16 +9249,19 @@ class StarlitTimelineApp {
             return;
         }
         
-        const duration = endTime - startTime;
-        const frames = Math.ceil(duration * this.fps);
+        const totalDuration = endTime - startTime;
+        const frames = Math.ceil(totalDuration * this.fps);
         
         const rangeInfo = (this.inPoint !== null && this.outPoint !== null) 
             ? '\n範囲: In/Outポイント' 
             : '';
         
-        const audioInfo = includeAudio ? '音声あり' : '音声なし';
+        // 音声クリップがあるか確認
+        const audioClips = this.clips.filter(c => c.asset && c.asset.type === 'audio');
+        const hasAudioClips = audioClips.length > 0;
+        const audioInfo = (includeAudio && hasAudioClips) ? '音声あり（FFmpeg結合）' : '音声なし';
         
-        if (!confirm(`WebM動画を書き出しますか?\n\n長さ: ${duration.toFixed(2)}秒\nフレーム数: ${frames}\nFPS: ${this.fps}\n音声: ${audioInfo}${rangeInfo}\n\n※WebMは透過（アルファチャンネル）に対応しています`)) {
+        if (!confirm(`WebM動画を書き出しますか?\n\n長さ: ${totalDuration.toFixed(2)}秒\nフレーム数: ${frames}\nFPS: ${this.fps}\n音声: ${audioInfo}${rangeInfo}\n\n※WebMは透過（アルファチャンネル）に対応しています`)) {
             return;
         }
         
@@ -9026,152 +9284,47 @@ class StarlitTimelineApp {
         progressDiv.innerHTML = `
             <h3 style="margin: 0 0 15px 0;">WebM書き出し中...</h3>
             <div id="exportProgress" style="margin: 10px 0;">準備中...</div>
-            <div style="font-size: 12px; color: #999; margin-top: 10px;">しばらくお待ちください</div>
+            <div id="exportSubProgress" style="font-size: 12px; color: #999; margin-top: 10px;"></div>
         `;
         document.body.appendChild(progressDiv);
         
-        const updateProgress = (message) => {
+        const updateProgress = (message, sub = '') => {
             const progressEl = document.getElementById('exportProgress');
+            const subEl = document.getElementById('exportSubProgress');
             if (progressEl) progressEl.textContent = message;
+            if (subEl) subEl.textContent = sub;
         };
         
         try {
-            // MediaRecorderのセットアップ
-            const videoStream = this.previewCanvas.captureStream(this.fps);
-            let finalStream = videoStream;
-            
-            // 音声を含める場合
-            if (includeAudio) {
-                // 音声クリップがあるか確認
-                const audioClips = this.clips.filter(c => c.asset && c.asset.type === 'audio');
-                if (audioClips.length > 0) {
-                    try {
-                        // AudioContextを使用して音声を合成
-                        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                        const destination = audioContext.createMediaStreamDestination();
-                        
-                        // 各音声クリップを接続
-                        for (const clip of audioClips) {
-                            if (clip.audioElement) {
-                                const source = audioContext.createMediaElementSource(clip.audioElement);
-                                source.connect(destination);
-                                source.connect(audioContext.destination);
-                            }
-                        }
-                        
-                        // 音声トラックを追加
-                        const audioTrack = destination.stream.getAudioTracks()[0];
-                        if (audioTrack) {
-                            finalStream = new MediaStream([
-                                ...videoStream.getVideoTracks(),
-                                audioTrack
-                            ]);
-                        }
-                    } catch (audioError) {
-                        console.warn('音声の追加に失敗しました:', audioError);
-                    }
-                }
-            }
-            
-            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                ? 'video/webm;codecs=vp9'
-                : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-                ? 'video/webm;codecs=vp8'
-                : 'video/webm';
-            
-            updateProgress(`エンコーダー: ${mimeType}`);
-            
-            const recorder = new MediaRecorder(finalStream, {
-                mimeType: mimeType,
-                videoBitsPerSecond: 8000000 // 8Mbps
+            // ステップ1: 映像を高速書き出し
+            updateProgress('映像をレンダリング中...', '0%');
+            const videoBlob = await this.renderVideoOnly(startTime, endTime, frames, (progress) => {
+                updateProgress('映像をレンダリング中...', `${Math.floor(progress * 100)}%`);
             });
             
-            const chunks = [];
-            
-            recorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    chunks.push(e.data);
-                }
-            };
-            
-            recorder.onstop = async () => {
-                updateProgress('ファイルを生成中...');
-                
-                // 書き出しモードを解除
-                this.isExporting = false;
-                
-                const blob = new Blob(chunks, { type: mimeType });
-                const url = URL.createObjectURL(blob);
-                
-                // ダウンロード
-                const a = document.createElement('a');
-                a.href = url;
-                const audioSuffix = includeAudio ? '' : '_noaudio';
-                a.download = `starlit_timeline_export${audioSuffix}_${Date.now()}.webm`;
-                a.click();
-                
-                URL.revokeObjectURL(url);
-                
-                // 進捗表示を削除
+            // 音声なしまたは音声クリップがない場合はそのままダウンロード
+            if (!includeAudio || !hasAudioClips) {
+                updateProgress('ダウンロード準備中...');
+                this.downloadBlob(videoBlob, `starlit_export_noaudio_${Date.now()}.webm`);
                 document.body.removeChild(progressDiv);
-                
-                // 元の時間に戻す
-                this.currentTime = originalTime;
-                this.updatePreview();
-                this.drawTimeline();
-                
-                alert(`✅ WebM書き出しが完了しました!\n\nWebM形式で保存されています。\n透過（アルファチャンネル）に対応しています。\n音声: ${audioInfo}`);
-            };
+                alert('✅ WebM書き出しが完了しました!\n\n音声なしで保存されています。');
+                return;
+            }
             
-            recorder.onerror = (e) => {
-                console.error('Recording error:', e);
-                this.isExporting = false;
-                document.body.removeChild(progressDiv);
-                alert('❌ 書き出し中にエラーが発生しました');
-            };
+            // ステップ2: 音声を高速レンダリング
+            updateProgress('音声をレンダリング中...', '');
+            const audioBlob = await this.renderAudioOnly(startTime, endTime, audioClips);
             
-            // 録画開始
-            recorder.start();
-            updateProgress('録画開始...');
+            // ステップ3: FFmpegで結合
+            updateProgress('FFmpegを読み込み中...', '初回は少し時間がかかります');
+            const finalBlob = await this.mergeWithFFmpeg(videoBlob, audioBlob, updateProgress);
             
-            // 書き出しモードを有効化（チェッカーボード非表示）
-            this.isExporting = true;
+            // ダウンロード
+            updateProgress('ダウンロード準備中...');
+            this.downloadBlob(finalBlob, `starlit_export_${Date.now()}.webm`);
             
-            const originalTime = this.currentTime;
-            const originalSelectedClip = this.selectedClip; // 選択状態を保存
-            
-            // 書き出し中は選択を解除してバウンディングボックスを非表示
-            this.selectedClip = null;
-            
-            const frameInterval = 1000 / this.fps; // ミリ秒
-            let currentFrame = 0;
-            
-            // フレームごとにプレビューを更新
-            const renderFrame = () => {
-                if (currentFrame >= frames) {
-                    // 録画停止
-                    updateProgress('エンコード中...');
-                    setTimeout(() => {
-                        recorder.stop();
-                        // 選択状態を復元
-                        this.selectedClip = originalSelectedClip;
-                    }, 500); // 最後のフレームを確実にキャプチャ
-                    return;
-                }
-                
-                this.currentTime = startTime + (currentFrame / this.fps);
-                this.updatePreview();
-                this.drawTimeline();
-                
-                currentFrame++;
-                updateProgress(`録画中: ${currentFrame}/${frames} フレーム (${Math.floor(currentFrame / frames * 100)}%)`);
-                
-                // 次のフレームをスケジュール
-                setTimeout(renderFrame, frameInterval);
-            };
-            
-            // レンダリング開始
-            renderFrame();
+            document.body.removeChild(progressDiv);
+            alert('✅ WebM書き出しが完了しました!\n\n音声付きで保存されています。');
             
         } catch (error) {
             console.error('Export error:', error);
@@ -9179,8 +9332,267 @@ class StarlitTimelineApp {
             if (progressDiv.parentNode) {
                 document.body.removeChild(progressDiv);
             }
-            alert('❌ 書き出しに失敗しました: ' + error.message);
+            
+            if (error.name === 'SecurityError' || error.message.includes('insecure') || error.message.includes('tainted')) {
+                alert('❌ セキュリティ制限により書き出しできません\n\n' +
+                    '原因: ローカルファイル (file://) からのアクセスでは、\n' +
+                    'キャンバスの書き出しがブラウザによってブロックされます。\n\n' +
+                    '解決方法:\n' +
+                    '1. VS Code + Live Server拡張機能を使用\n' +
+                    '2. python -m http.server でローカルサーバーを起動\n' +
+                    '3. GitHub Pagesにデプロイして使用');
+            } else {
+                alert('❌ 書き出しに失敗しました: ' + error.message);
+            }
         }
+    }
+    
+    // 映像のみを高速レンダリング
+    async renderVideoOnly(startTime, endTime, totalFrames, onProgress) {
+        return new Promise((resolve, reject) => {
+            const videoStream = this.previewCanvas.captureStream(this.fps);
+            
+            // 映像のみのMIMEタイプ
+            let mimeType;
+            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+                mimeType = 'video/webm;codecs=vp9';
+            } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+                mimeType = 'video/webm;codecs=vp8';
+            } else {
+                mimeType = 'video/webm';
+            }
+            
+            const recorder = new MediaRecorder(videoStream, {
+                mimeType: mimeType,
+                videoBitsPerSecond: 8000000
+            });
+            
+            const chunks = [];
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunks.push(e.data);
+            };
+            
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: mimeType });
+                resolve(blob);
+            };
+            
+            recorder.onerror = (e) => reject(e.error || new Error('録画エラー'));
+            
+            // 書き出しモードを有効化
+            this.isExporting = true;
+            const originalSelectedClip = this.selectedClip;
+            this.selectedClip = null;
+            
+            recorder.start();
+            
+            let currentFrame = 0;
+            const frameInterval = 1000 / this.fps;
+            
+            const renderFrame = () => {
+                if (currentFrame >= totalFrames) {
+                    setTimeout(() => {
+                        recorder.stop();
+                        this.isExporting = false;
+                        this.selectedClip = originalSelectedClip;
+                    }, 100);
+                    return;
+                }
+                
+                this.currentTime = startTime + (currentFrame / this.fps);
+                this.updatePreview();
+                
+                currentFrame++;
+                onProgress(currentFrame / totalFrames);
+                
+                setTimeout(renderFrame, frameInterval);
+            };
+            
+            renderFrame();
+        });
+    }
+    
+    // 音声のみを高速レンダリング（OfflineAudioContext）
+    async renderAudioOnly(startTime, endTime, audioClips) {
+        const duration = endTime - startTime;
+        const sampleRate = 44100;
+        const offlineCtx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
+        
+        // 各音声クリップをデコードして配置
+        for (const clip of audioClips) {
+            if (!clip.asset || !clip.asset.url) continue;
+            
+            try {
+                // 音声データをフェッチ
+                const response = await fetch(clip.asset.url);
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                // クリップの開始位置を計算
+                const clipStartInExport = Math.max(0, clip.startTime - startTime);
+                const clipEndInExport = Math.min(duration, clip.startTime + clip.duration - startTime);
+                
+                if (clipEndInExport <= 0 || clipStartInExport >= duration) continue;
+                
+                // BufferSourceを作成
+                const source = offlineCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                
+                // ゲインノード（音量調整）
+                const gainNode = offlineCtx.createGain();
+                gainNode.gain.value = clip.volume !== undefined ? clip.volume : 1.0;
+                
+                source.connect(gainNode);
+                gainNode.connect(offlineCtx.destination);
+                
+                // 再生位置を計算
+                const trimStart = clip.trimStart || 0;
+                const offset = trimStart + Math.max(0, startTime - clip.startTime);
+                const startAt = clipStartInExport;
+                const playDuration = clipEndInExport - clipStartInExport;
+                
+                source.start(startAt, offset, playDuration);
+            } catch (e) {
+                console.warn('音声クリップのデコードに失敗:', clip.asset.name, e);
+            }
+        }
+        
+        // オフラインレンダリング実行
+        const renderedBuffer = await offlineCtx.startRendering();
+        
+        // WAVに変換
+        return this.audioBufferToWavBlob(renderedBuffer);
+    }
+    
+    // AudioBufferをWAV Blobに変換
+    audioBufferToWavBlob(audioBuffer) {
+        const numChannels = audioBuffer.numberOfChannels;
+        const sampleRate = audioBuffer.sampleRate;
+        const format = 1; // PCM
+        const bitDepth = 16;
+        
+        const bytesPerSample = bitDepth / 8;
+        const blockAlign = numChannels * bytesPerSample;
+        
+        const samples = audioBuffer.length;
+        const dataSize = samples * blockAlign;
+        const buffer = new ArrayBuffer(44 + dataSize);
+        const view = new DataView(buffer);
+        
+        // WAVヘッダー
+        const writeString = (offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+        
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + dataSize, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, format, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * blockAlign, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(36, 'data');
+        view.setUint32(40, dataSize, true);
+        
+        // オーディオデータ
+        const channels = [];
+        for (let ch = 0; ch < numChannels; ch++) {
+            channels.push(audioBuffer.getChannelData(ch));
+        }
+        
+        let offset = 44;
+        for (let i = 0; i < samples; i++) {
+            for (let ch = 0; ch < numChannels; ch++) {
+                const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+                const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                view.setInt16(offset, intSample, true);
+                offset += 2;
+            }
+        }
+        
+        return new Blob([buffer], { type: 'audio/wav' });
+    }
+    
+    // FFmpegで映像と音声を結合
+    async mergeWithFFmpeg(videoBlob, audioBlob, updateProgress) {
+        // FFmpeg.wasmを動的にロード（シングルスレッド版 - GitHub Pages対応）
+        if (!window.FFmpegInstance) {
+            updateProgress('FFmpegをダウンロード中...', '初回のみ時間がかかります（約30MB）');
+            
+            // FFmpeg.wasm 0.12.x シングルスレッド版（SharedArrayBuffer不要）
+            const { FFmpeg } = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm');
+            const { fetchFile } = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm');
+            
+            window.FFmpegClass = FFmpeg;
+            window.fetchFile = fetchFile;
+            
+            const ffmpeg = new FFmpeg();
+            
+            // ログを表示（デバッグ用）
+            ffmpeg.on('log', ({ message }) => {
+                console.log('FFmpeg:', message);
+            });
+            
+            // FFmpegをロード（シングルスレッド版コアを使用 - GitHub Pages対応）
+            updateProgress('FFmpegを初期化中...', '');
+            await ffmpeg.load({
+                coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.12.6/dist/umd/ffmpeg-core.js',
+                wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.12.6/dist/umd/ffmpeg-core.wasm',
+            });
+            
+            window.FFmpegInstance = ffmpeg;
+        }
+        
+        const ffmpeg = window.FFmpegInstance;
+        const { fetchFile } = window;
+        
+        ffmpeg.on('progress', ({ progress }) => {
+            updateProgress('映像と音声を結合中...', `${Math.floor(progress * 100)}%`);
+        });
+        
+        // ファイルを書き込み
+        updateProgress('ファイルを準備中...', '');
+        await ffmpeg.writeFile('video.webm', await fetchFile(videoBlob));
+        await ffmpeg.writeFile('audio.wav', await fetchFile(audioBlob));
+        
+        // 結合実行
+        updateProgress('映像と音声を結合中...', '0%');
+        await ffmpeg.exec([
+            '-i', 'video.webm',
+            '-i', 'audio.wav',
+            '-c:v', 'copy',
+            '-c:a', 'libopus',
+            '-b:a', '128k',
+            '-shortest',
+            'output.webm'
+        ]);
+        
+        // 結果を読み込み
+        updateProgress('出力ファイルを生成中...', '');
+        const data = await ffmpeg.readFile('output.webm');
+        
+        // クリーンアップ
+        await ffmpeg.deleteFile('video.webm');
+        await ffmpeg.deleteFile('audio.wav');
+        await ffmpeg.deleteFile('output.webm');
+        
+        return new Blob([data], { type: 'video/webm' });
+    }
+    
+    // Blobをダウンロード
+    downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
     }
     
     // 現在のフレームを静止画PNGとして書き出し

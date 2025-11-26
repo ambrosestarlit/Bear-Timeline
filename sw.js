@@ -1,5 +1,5 @@
 // Starlit Timeline Editor Service Worker
-const CACHE_NAME = 'starlit-timeline-v2.5.28';
+const CACHE_NAME = 'starlit-timeline-v2.6.0';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -9,6 +9,7 @@ const ASSETS_TO_CACHE = [
     './app-extensions.js',
     './modules/clipping.js',
     './modules/sceneManager.js',
+    './modules/advCaption.js',
     './modules/utils/drawing.js',
     './modules/utils/storage.js',
     './modules/utils/math.js',
@@ -29,7 +30,24 @@ const ASSETS_TO_CACHE = [
     './pin-05.png',
     './icon-192.png',
     './icon-512.png',
-    './manifest.json'
+    './manifest.json',
+    // ADV字幕用メッセージボックス画像
+    './assets/msgbox/elegant/E01.png',
+    './assets/msgbox/elegant/E02.png',
+    './assets/msgbox/elegant/E03.png',
+    './assets/msgbox/stylish/S01.png',
+    './assets/msgbox/dot/D01.png',
+    './assets/msgbox/dot/D02.png',
+    './assets/msgbox/dot/D03.png',
+    './assets/msgbox/dot/D04.png',
+    './assets/msgbox/pop/P01.png',
+    './assets/msgbox/pop/P02.png',
+    './assets/msgbox/pop/P03.png',
+    './assets/msgbox/pop/P04.png',
+    './assets/msgbox/japanese/J01.png',
+    './assets/msgbox/japanese/J02.png',
+    './assets/msgbox/japanese/J03.png',
+    './assets/msgbox/japanese/J04.png'
 ];
 
 // インストール時にキャッシュ
